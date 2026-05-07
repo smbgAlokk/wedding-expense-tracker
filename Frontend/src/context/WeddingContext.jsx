@@ -1,7 +1,12 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { getCurrentWedding, getExpenseSummary, getWeddingMembers } from '../api';
 
 const WeddingContext = createContext(null);
+
+// Throttle background (tab-focus) refreshes to avoid hammering the API on rapid
+// tab toggles. 15s is short enough that members see admin's category changes
+// quickly when they return to the tab, long enough to prevent abuse.
+const VISIBILITY_REFRESH_THROTTLE_MS = 15_000;
 
 export function WeddingProvider({ children }) {
   const [member, setMember] = useState(() => {
@@ -80,13 +85,36 @@ export function WeddingProvider({ children }) {
     }
   }, [isAuthenticated]);
 
-  // Load summary on auth
+  // Initial sync on auth — pulls the freshest wedding (including any category
+  // changes the admin made), summary, and members. Critical for members whose
+  // localStorage was seeded at join time and may be stale after admin edits.
   useEffect(() => {
     if (isAuthenticated) {
+      refreshWedding();
       refreshSummary();
       refreshMembers();
     }
-  }, [isAuthenticated, refreshSummary, refreshMembers]);
+  }, [isAuthenticated, refreshWedding, refreshSummary, refreshMembers]);
+
+  // Background sync on tab focus — covers the case where admin updates
+  // categories or expenses while a member's tab is in the background.
+  // Throttled so rapid tab toggles don't spam the API.
+  const lastFocusRefreshRef = useRef(0);
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const handleVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastFocusRefreshRef.current < VISIBILITY_REFRESH_THROTTLE_MS) return;
+      lastFocusRefreshRef.current = now;
+      refreshWedding();
+      refreshSummary();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [isAuthenticated, refreshWedding, refreshSummary]);
 
   const value = {
     member,

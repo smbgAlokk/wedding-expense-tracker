@@ -67,19 +67,36 @@ weddingSchema.pre('save', async function(next) {
   next();
 });
 
-// Add default categories if none provided
+// Add default categories if none provided.
+// Curated for Indian weddings — universal categories every wedding has.
+// Admins can add custom categories via Settings; this list is the sensible default.
 weddingSchema.pre('save', function(next) {
   if (this.isNew && (!this.categories || this.categories.length === 0)) {
     this.categories = [
+      // Most-used core categories first
       { name: 'Venue', icon: '🏛️', budgetLimit: 0 },
       { name: 'Catering', icon: '🍽️', budgetLimit: 0 },
       { name: 'Decoration', icon: '💐', budgetLimit: 0 },
       { name: 'Photography', icon: '📸', budgetLimit: 0 },
       { name: 'Outfits', icon: '👗', budgetLimit: 0 },
-      { name: 'Music & DJ', icon: '🎵', budgetLimit: 0 },
-      { name: 'Transport', icon: '🚗', budgetLimit: 0 },
-      { name: 'Gifts', icon: '🎁', budgetLimit: 0 },
       { name: 'Jewelry', icon: '💍', budgetLimit: 0 },
+      { name: 'Music & DJ', icon: '🎵', budgetLimit: 0 },
+      { name: 'Makeup & Beauty', icon: '💄', budgetLimit: 0 },
+      // Pre-wedding ceremonies (cultural staples)
+      { name: 'Mehendi', icon: '🌿', budgetLimit: 0 },
+      { name: 'Sangeet', icon: '💃', budgetLimit: 0 },
+      { name: 'Haldi', icon: '🌼', budgetLimit: 0 },
+      { name: 'Priest & Pooja', icon: '🪔', budgetLimit: 0 },
+      // Logistics
+      { name: 'Transport', icon: '🚗', budgetLimit: 0 },
+      { name: 'Invitations', icon: '💌', budgetLimit: 0 },
+      { name: 'Sweets', icon: '🍬', budgetLimit: 0 },
+      { name: 'Gifts', icon: '🎁', budgetLimit: 0 },
+      { name: 'Accommodation', icon: '🏨', budgetLimit: 0 },
+      // Post-wedding
+      { name: 'Reception', icon: '🎊', budgetLimit: 0 },
+      { name: 'Honeymoon', icon: '✈️', budgetLimit: 0 },
+      // Catch-all
       { name: 'Miscellaneous', icon: '📦', budgetLimit: 0 }
     ];
   }

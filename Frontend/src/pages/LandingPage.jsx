@@ -2,14 +2,17 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useWedding } from '../context/WeddingContext';
+import { useLang } from '../context/LanguageContext';
 import { createWedding, joinWedding, loginUser, googleLogin, selectWedding } from '../api';
+import ThemeToggle from '../components/ThemeToggle';
+import LanguageToggle from '../components/LanguageToggle';
 
 export default function LandingPage() {
-  const [mode, setMode] = useState(null); // null | 'create' | 'join' | 'login'
+  const [mode, setMode] = useState(null); // null | 'create' | 'join' | 'login' | 'select-wedding'
   const { login } = useWedding();
+  const { t, tServer } = useLang();
   const navigate = useNavigate();
 
-  // Handle multi-wedding selection flow
   const [weddingList, setWeddingList] = useState(null);
 
   const handleLoginSuccess = (data) => {
@@ -18,7 +21,7 @@ export default function LandingPage() {
       setMode('select-wedding');
     } else {
       login(data.member, data.wedding, data.token);
-      toast.success(data.message || `Welcome back!`);
+      toast.success(tServer(data.message) || t('login.welcomeBack'));
       navigate('/dashboard');
     }
   };
@@ -28,15 +31,28 @@ export default function LandingPage() {
       const res = await selectWedding({ memberId });
       const { wedding, member, token } = res.data.data;
       login(member, wedding, token);
-      toast.success(`Entered ${wedding.weddingName}`);
+      toast.success(t('select.entered', { name: wedding.weddingName }));
       navigate('/dashboard');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to select wedding');
+      toast.error(tServer(err.response?.data?.message) || t('select.errFailed'));
     }
   };
 
   return (
-    <div className="container" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', paddingTop: 40, paddingBottom: 40 }}>
+    <div className="container" style={{
+      minHeight: '100vh',
+      minHeight: '100dvh',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      paddingTop: 32,
+      paddingBottom: 32,
+      position: 'relative',
+    }}>
+      <div style={{ position: 'absolute', top: 20, right: 20, display: 'flex', gap: 8, zIndex: 10 }}>
+        <LanguageToggle />
+        <ThemeToggle />
+      </div>
       {!mode && <HeroSection onSelect={setMode} />}
       {mode === 'create' && <CreateForm onBack={() => setMode(null)} login={login} navigate={navigate} />}
       {mode === 'join' && <JoinForm onBack={() => setMode(null)} login={login} navigate={navigate} />}
@@ -47,37 +63,57 @@ export default function LandingPage() {
 }
 
 function HeroSection({ onSelect }) {
+  const { t } = useLang();
   return (
-    <div className="animate-in" style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: '4rem', marginBottom: 16 }}>💒</div>
-      <h1 style={{ fontSize: '2.2rem', fontWeight: 800, marginBottom: 8, lineHeight: 1.2 }}>
-        Wedding<br /><span style={{ color: 'var(--primary-light)' }}>Expense Tracker</span>
+    <div className="animate-in" style={{ textAlign: 'center', maxWidth: 460, margin: '0 auto', width: '100%' }}>
+      <div style={{
+        fontSize: 'clamp(3.4rem, 10vw, 4.4rem)',
+        marginBottom: 'var(--space-4)',
+        animation: 'bob 4s ease-in-out infinite',
+        display: 'inline-block',
+      }}>💒</div>
+      <h1 className="h1" style={{ marginBottom: 'var(--space-3)' }}>
+        {t('landing.title1')}<br />
+        <span style={{
+          background: 'var(--gradient-primary)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+        }}>
+          {t('landing.title2')}
+        </span>
       </h1>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '1.05rem', marginBottom: 40, lineHeight: 1.6 }}>
-        Track every rupee, together as a family. <br />Simple enough for everyone.
+      <p style={{
+        color: 'var(--text-secondary)',
+        fontSize: '1rem',
+        marginBottom: 'var(--space-10)',
+        lineHeight: 1.6,
+      }}>
+        {t('landing.subtitle1')}<br />{t('landing.subtitle2')}
       </p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <button className="btn btn-primary btn-full btn-lg" onClick={() => onSelect('create')} id="btn-create-wedding">
-          💍 Create a Wedding
+          {t('landing.createBtn')}
         </button>
         <button className="btn btn-secondary btn-full btn-lg" onClick={() => onSelect('join')} id="btn-join-wedding">
-          🎉 Join with Code
+          {t('landing.joinBtn')}
         </button>
-        <button className="btn btn-secondary btn-full btn-lg" onClick={() => onSelect('login')} id="btn-login" style={{ borderColor: 'var(--primary)', color: 'var(--primary-light)' }}>
-          🔑 Login (Returning User)
+        <button className="btn btn-ghost btn-full btn-lg" onClick={() => onSelect('login')} id="btn-login">
+          {t('landing.loginBtn')}
         </button>
       </div>
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 24 }}>
-        Family members join with code • Admins login with email
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 'var(--space-6)', lineHeight: 1.6 }}>
+        {t('landing.helperHint')}
       </p>
     </div>
   );
 }
 
 function CreateForm({ onBack, login, navigate }) {
+  const { t, tServer } = useLang();
   const [form, setForm] = useState({
     weddingName: '', partner1: '', partner2: '', weddingDate: '', totalBudget: '',
-    adminName: '', adminRelation: 'Organizer',
+    adminName: '', adminRelation: '',
     email: '', password: '', confirmPassword: ''
   });
   const [loading, setLoading] = useState(false);
@@ -87,97 +123,98 @@ function CreateForm({ onBack, login, navigate }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.weddingName || !form.partner1 || !form.partner2 || !form.weddingDate || !form.adminName) {
-      return toast.error('Please fill all required fields');
+      return toast.error(t('create.errFillRequired'));
     }
-    if (!form.email) return toast.error('Please provide your email');
-    if (!form.password) return toast.error('Please create a password');
-    if (form.password.length < 6) return toast.error('Password must be at least 6 characters');
-    if (form.password !== form.confirmPassword) return toast.error('Passwords do not match');
+    if (!form.email) return toast.error(t('create.errEmail'));
+    if (!form.password) return toast.error(t('create.errPassword'));
+    if (form.password.length < 6) return toast.error(t('create.errPasswordLength'));
+    if (form.password !== form.confirmPassword) return toast.error(t('create.errPasswordMismatch'));
 
     setLoading(true);
     try {
-      const res = await createWedding({ ...form, totalBudget: parseFloat(form.totalBudget) || 0 });
+      const adminRelation = form.adminRelation || t('create.adminRelationDefault');
+      const res = await createWedding({ ...form, adminRelation, totalBudget: parseFloat(form.totalBudget) || 0 });
       const { wedding, member, token } = res.data.data;
       login(member, wedding, token);
-      toast.success(`Wedding created! Code: ${wedding.joinCode}`);
+      toast.success(t('create.successCode', { code: wedding.joinCode }));
       navigate('/dashboard');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to create wedding');
+      toast.error(tServer(err.response?.data?.message) || t('create.errFailed'));
     } finally { setLoading(false); }
   };
 
   return (
-    <div className="animate-in">
+    <div className="animate-in" style={{ width: '100%' }}>
       <div className="page-header">
-        <button className="back-btn" onClick={onBack}>←</button>
-        <h1>Create Wedding</h1>
+        <button className="back-btn" onClick={onBack} aria-label="Back">←</button>
+        <h1>{t('create.header')}</h1>
       </div>
       <form onSubmit={handleSubmit}>
         <div className="form-group">
-          <label className="form-label">Wedding Name *</label>
-          <input className="form-input" placeholder="e.g., Rohan weds Neha" value={form.weddingName} onChange={e => set('weddingName', e.target.value)} id="input-wedding-name" />
+          <label className="form-label">{t('create.weddingName')}</label>
+          <input className="form-input" placeholder={t('create.weddingNamePlaceholder')} value={form.weddingName} onChange={e => set('weddingName', e.target.value)} id="input-wedding-name" />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div className="form-group">
-            <label className="form-label">Partner 1 *</label>
-            <input className="form-input" placeholder="Name" value={form.partner1} onChange={e => set('partner1', e.target.value)} id="input-partner1" />
+            <label className="form-label">{t('create.partner1')}</label>
+            <input className="form-input" placeholder={t('create.partnerPlaceholder')} value={form.partner1} onChange={e => set('partner1', e.target.value)} id="input-partner1" />
           </div>
           <div className="form-group">
-            <label className="form-label">Partner 2 *</label>
-            <input className="form-input" placeholder="Name" value={form.partner2} onChange={e => set('partner2', e.target.value)} id="input-partner2" />
+            <label className="form-label">{t('create.partner2')}</label>
+            <input className="form-input" placeholder={t('create.partnerPlaceholder')} value={form.partner2} onChange={e => set('partner2', e.target.value)} id="input-partner2" />
           </div>
         </div>
         <div className="form-group">
-          <label className="form-label">Wedding Date *</label>
+          <label className="form-label">{t('create.weddingDate')}</label>
           <input className="form-input" type="date" value={form.weddingDate} onChange={e => set('weddingDate', e.target.value)} id="input-wedding-date" />
         </div>
         <div className="form-group">
-          <label className="form-label">Total Budget (₹)</label>
-          <input className="form-input" type="number" placeholder="e.g., 500000" value={form.totalBudget} onChange={e => set('totalBudget', e.target.value)} id="input-budget" />
+          <label className="form-label">{t('create.totalBudget')}</label>
+          <input className="form-input" type="number" inputMode="decimal" placeholder={t('create.budgetPlaceholder')} value={form.totalBudget} onChange={e => set('totalBudget', e.target.value)} id="input-budget" />
         </div>
 
-        <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '24px 0' }} />
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: 16 }}>👤 Your Account (as admin)</p>
+        <hr className="divider" />
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem', fontWeight: 600, marginBottom: 14 }}>{t('create.adminSection')}</p>
 
         <div className="form-group">
-          <label className="form-label">Your Name *</label>
-          <input className="form-input" placeholder="Your name" value={form.adminName} onChange={e => set('adminName', e.target.value)} id="input-admin-name" />
+          <label className="form-label">{t('create.yourName')}</label>
+          <input className="form-input" placeholder={t('create.yourNamePlaceholder')} value={form.adminName} onChange={e => set('adminName', e.target.value)} id="input-admin-name" />
         </div>
         <div className="form-group">
-          <label className="form-label">Your Relation</label>
-          <input className="form-input" placeholder="e.g., Father of Bride" value={form.adminRelation} onChange={e => set('adminRelation', e.target.value)} id="input-admin-relation" />
+          <label className="form-label">{t('create.yourRelation')}</label>
+          <input className="form-input" placeholder={t('create.yourRelationPlaceholder')} value={form.adminRelation} onChange={e => set('adminRelation', e.target.value)} id="input-admin-relation" />
         </div>
 
-        <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '24px 0' }} />
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: 4 }}>🔒 Login Credentials</p>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginBottom: 16 }}>This allows you to log back in anytime, even if removed</p>
+        <hr className="divider" />
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem', fontWeight: 600, marginBottom: 4 }}>{t('create.credSection')}</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginBottom: 16, lineHeight: 1.5 }}>{t('create.credHint')}</p>
 
         <div className="form-group">
-          <label className="form-label">Email Address *</label>
-          <input className="form-input" type="email" placeholder="your@email.com" value={form.email} onChange={e => set('email', e.target.value)} id="input-email" />
+          <label className="form-label">{t('create.email')}</label>
+          <input className="form-input" type="email" autoComplete="email" placeholder={t('create.emailPlaceholder')} value={form.email} onChange={e => set('email', e.target.value)} id="input-email" />
         </div>
         <div className="form-group">
-          <label className="form-label">Create Password *</label>
+          <label className="form-label">{t('create.password')}</label>
           <div style={{ position: 'relative' }}>
-            <input className="form-input" type={showPassword ? 'text' : 'password'} placeholder="Min 6 characters" value={form.password} onChange={e => set('password', e.target.value)} id="input-password" style={{ paddingRight: 50 }} />
-            <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem' }}>
+            <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('create.passwordPlaceholder')} value={form.password} onChange={e => set('password', e.target.value)} id="input-password" style={{ paddingRight: 50 }} />
+            <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label="Toggle password visibility" style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem', padding: 4 }}>
               {showPassword ? '🙈' : '👁️'}
             </button>
           </div>
         </div>
         <div className="form-group">
-          <label className="form-label">Confirm Password *</label>
-          <input className="form-input" type={showPassword ? 'text' : 'password'} placeholder="Re-enter password" value={form.confirmPassword} onChange={e => set('confirmPassword', e.target.value)} id="input-confirm-password" />
+          <label className="form-label">{t('create.confirmPassword')}</label>
+          <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('create.confirmPasswordPlaceholder')} value={form.confirmPassword} onChange={e => set('confirmPassword', e.target.value)} id="input-confirm-password" />
           {form.password && form.confirmPassword && form.password !== form.confirmPassword && (
-            <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: 6 }}>❌ Passwords do not match</p>
+            <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: 6 }}>{t('create.passwordsNoMatch')}</p>
           )}
           {form.password && form.confirmPassword && form.password === form.confirmPassword && (
-            <p style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 6 }}>✅ Passwords match</p>
+            <p style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 6 }}>{t('create.passwordsMatch')}</p>
           )}
         </div>
 
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-create" style={{ marginTop: 8 }}>
-          {loading ? '⏳ Creating...' : '🎉 Create Wedding'}
+          {loading ? t('create.creating') : t('create.submitBtn')}
         </button>
       </form>
     </div>
@@ -185,6 +222,7 @@ function CreateForm({ onBack, login, navigate }) {
 }
 
 function LoginForm({ onBack, onSuccess }) {
+  const { t, tServer } = useLang();
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -192,27 +230,25 @@ function LoginForm({ onBack, onSuccess }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.email || !form.password) return toast.error('Please enter email and password');
+    if (!form.email || !form.password) return toast.error(t('login.errMissing'));
     setLoading(true);
     try {
       const res = await loginUser(form);
       onSuccess(res.data.data);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Login failed');
+      toast.error(tServer(err.response?.data?.message) || t('login.errFailed'));
     } finally { setLoading(false); }
   };
 
-  // Google Sign-In handler
   const handleGoogleLogin = useCallback(async (response) => {
     try {
       const res = await googleLogin({ credential: response.credential });
       onSuccess(res.data.data);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Google login failed');
+      toast.error(tServer(err.response?.data?.message) || t('login.errGoogleFailed'));
     }
-  }, [onSuccess]);
+  }, [onSuccess, t, tServer]);
 
-  // Initialize Google Sign-In
   useEffect(() => {
     const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     if (!googleClientId || typeof window.google === 'undefined') return;
@@ -236,46 +272,42 @@ function LoginForm({ onBack, onSuccess }) {
   }, [handleGoogleLogin]);
 
   return (
-    <div className="animate-in">
+    <div className="animate-in" style={{ width: '100%', maxWidth: 420, margin: '0 auto' }}>
       <div className="page-header">
-        <button className="back-btn" onClick={onBack}>←</button>
-        <h1>Welcome Back</h1>
+        <button className="back-btn" onClick={onBack} aria-label="Back">←</button>
+        <h1>{t('login.header')}</h1>
       </div>
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: 24 }}>Login with your registered email</p>
+      <p className="text-muted" style={{ fontSize: '0.92rem', marginBottom: 24 }}>{t('login.subtitle')}</p>
 
       <form onSubmit={handleSubmit}>
         <div className="form-group">
-          <label className="form-label">Email Address</label>
-          <input className="form-input" type="email" placeholder="your@email.com" value={form.email} onChange={e => set('email', e.target.value)} id="input-login-email" autoFocus />
+          <label className="form-label">{t('login.email')}</label>
+          <input className="form-input" type="email" autoComplete="email" placeholder={t('login.emailPlaceholder')} value={form.email} onChange={e => set('email', e.target.value)} id="input-login-email" autoFocus />
         </div>
         <div className="form-group">
-          <label className="form-label">Password</label>
+          <label className="form-label">{t('login.password')}</label>
           <div style={{ position: 'relative' }}>
-            <input className="form-input" type={showPassword ? 'text' : 'password'} placeholder="Your password" value={form.password} onChange={e => set('password', e.target.value)} id="input-login-password" style={{ paddingRight: 50 }} />
-            <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem' }}>
+            <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder={t('login.passwordPlaceholder')} value={form.password} onChange={e => set('password', e.target.value)} id="input-login-password" style={{ paddingRight: 50 }} />
+            <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label="Toggle password visibility" style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem', padding: 4 }}>
               {showPassword ? '🙈' : '👁️'}
             </button>
           </div>
         </div>
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-login" style={{ marginTop: 8 }}>
-          {loading ? '⏳ Logging in...' : '🔑 Login'}
+          {loading ? t('login.loggingIn') : t('login.submitBtn')}
         </button>
       </form>
 
-      {/* Google Sign-In */}
-      <div style={{ textAlign: 'center', margin: '24px 0 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ flex: 1, height: 1, background: 'var(--border-color)' }} />
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>or</span>
-          <div style={{ flex: 1, height: 1, background: 'var(--border-color)' }} />
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '28px 0 16px' }}>
+        <div style={{ flex: 1, height: 1, background: 'var(--divider)' }} />
+        <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 500 }}>{t('common.or')}</span>
+        <div style={{ flex: 1, height: 1, background: 'var(--divider)' }} />
       </div>
-      <div id="google-signin-btn" style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }} />
+      <div id="google-signin-btn" style={{ display: 'flex', justifyContent: 'center', marginBottom: 16, minHeight: 44 }} />
 
-      {/* If Google SDK not loaded, show a styled fallback button */}
       {typeof window !== 'undefined' && typeof window.google === 'undefined' && (
-        <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: 8 }}>
-          Google Sign-In requires a Google Client ID configuration
+        <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+          {t('login.googleConfigHint')}
         </p>
       )}
     </div>
@@ -283,78 +315,100 @@ function LoginForm({ onBack, onSuccess }) {
 }
 
 function SelectWeddingForm({ weddings, onSelect, onBack }) {
+  const { t } = useLang();
   return (
-    <div className="animate-in">
+    <div className="animate-in" style={{ width: '100%', maxWidth: 480, margin: '0 auto' }}>
       <div className="page-header">
-        <button className="back-btn" onClick={onBack}>←</button>
-        <h1>Select Wedding</h1>
+        <button className="back-btn" onClick={onBack} aria-label="Back">←</button>
+        <h1>{t('select.header')}</h1>
       </div>
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: 24 }}>
-        Your email is linked to multiple weddings. Tap one to enter.
+      <p className="text-muted" style={{ fontSize: '0.92rem', marginBottom: 24 }}>
+        {t('select.subtitle')}
       </p>
-      {weddings && weddings.map(w => (
-        <button
-          key={w.memberId}
-          className="glass-card"
-          onClick={() => onSelect(w.memberId)}
-          style={{ width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 16, border: '1px solid var(--border-color)' }}
-        >
-          <div style={{ fontSize: '2rem' }}>💒</div>
-          <div style={{ flex: 1 }}>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: 4 }}>{w.weddingName}</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-              {w.role === 'admin' ? '👑 Admin' : '👤 Member'} • Code: {w.joinCode}
-            </p>
-          </div>
-          <span style={{ color: 'var(--primary-light)', fontSize: '1.2rem' }}>→</span>
-        </button>
-      ))}
+      <div className="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {weddings && weddings.map(w => (
+          <button
+            key={w.memberId}
+            onClick={() => onSelect(w.memberId)}
+            className="surface-card"
+            style={{
+              width: '100%',
+              textAlign: 'left',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+              padding: 'var(--space-4) var(--space-5)',
+              transition: 'var(--transition)',
+            }}
+          >
+            <div style={{ fontSize: '1.8rem', flexShrink: 0 }}>💒</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.weddingName}</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                {w.role === 'admin' ? t('select.admin') : t('select.member')} • {t('select.codeLabel')} <span className="text-tnum">{w.joinCode}</span>
+              </p>
+            </div>
+            <span style={{ color: 'var(--primary-light)', fontSize: '1.3rem', flexShrink: 0 }}>→</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
 function JoinForm({ onBack, login, navigate }) {
+  const { t, tServer } = useLang();
   const [form, setForm] = useState({ joinCode: '', name: '', relation: '' });
   const [loading, setLoading] = useState(false);
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.joinCode || !form.name) return toast.error('Please enter the code and your name');
+    if (!form.joinCode || !form.name) return toast.error(t('join.errMissing'));
     setLoading(true);
     try {
       const res = await joinWedding(form);
       const { wedding, member, token } = res.data.data;
       login(member, wedding, token);
-      toast.success(res.data.message);
+      toast.success(tServer(res.data.message) || t('login.welcomeBack'));
       navigate('/dashboard');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Invalid code or error joining');
+      toast.error(tServer(err.response?.data?.message) || t('join.errFailed'));
     } finally { setLoading(false); }
   };
 
   return (
-    <div className="animate-in">
+    <div className="animate-in" style={{ width: '100%', maxWidth: 420, margin: '0 auto' }}>
       <div className="page-header">
-        <button className="back-btn" onClick={onBack}>←</button>
-        <h1>Join a Wedding</h1>
+        <button className="back-btn" onClick={onBack} aria-label="Back">←</button>
+        <h1>{t('join.header')}</h1>
       </div>
       <form onSubmit={handleSubmit}>
         <div className="form-group">
-          <label className="form-label">Wedding Code *</label>
-          <input className="form-input form-input-lg" placeholder="ABC123" maxLength={6} value={form.joinCode} onChange={e => set('joinCode', e.target.value.toUpperCase())} style={{ textTransform: 'uppercase', letterSpacing: '6px' }} id="input-join-code" />
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 8, textAlign: 'center' }}>Ask the wedding organizer for this code</p>
+          <label className="form-label">{t('join.code')}</label>
+          <input
+            className="form-input form-input-lg text-tnum"
+            placeholder={t('join.codePlaceholder')}
+            maxLength={6}
+            value={form.joinCode}
+            onChange={e => set('joinCode', e.target.value.toUpperCase())}
+            style={{ textTransform: 'uppercase', letterSpacing: '6px' }}
+            id="input-join-code"
+            autoFocus
+          />
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: 8, textAlign: 'center' }}>{t('join.codeHint')}</p>
         </div>
         <div className="form-group">
-          <label className="form-label">Your Name *</label>
-          <input className="form-input" placeholder="e.g., Uncle Rajesh" value={form.name} onChange={e => set('name', e.target.value)} id="input-join-name" />
+          <label className="form-label">{t('join.name')}</label>
+          <input className="form-input" placeholder={t('join.namePlaceholder')} value={form.name} onChange={e => set('name', e.target.value)} id="input-join-name" />
         </div>
         <div className="form-group">
-          <label className="form-label">Your Relation</label>
-          <input className="form-input" placeholder="e.g., Maternal Uncle" value={form.relation} onChange={e => set('relation', e.target.value)} id="input-join-relation" />
+          <label className="form-label">{t('join.relation')}</label>
+          <input className="form-input" placeholder={t('join.relationPlaceholder')} value={form.relation} onChange={e => set('relation', e.target.value)} id="input-join-relation" />
         </div>
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-join" style={{ marginTop: 8 }}>
-          {loading ? '⏳ Joining...' : '🎊 Join Wedding'}
+          {loading ? t('join.joining') : t('join.submitBtn')}
         </button>
       </form>
     </div>

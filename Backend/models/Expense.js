@@ -51,6 +51,10 @@ const expenseSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  receiptPublicId: {
+    type: String,
+    default: ''
+  },
   notes: {
     type: String,
     trim: true,

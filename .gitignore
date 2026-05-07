@@ -1,0 +1,24 @@
+# Environments
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Build outputs
+Frontend/dist/
+Frontend/build/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+.agents/
+.augment/
+.claude/
+skills-lock.json
+
+MASTER_CONTEXT.md

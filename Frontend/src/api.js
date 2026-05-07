@@ -2,10 +2,16 @@ import axios from 'axios';
 
 const API_BASE = '/api';
 
+// IMPORTANT: do NOT set a global default `Content-Type`.
+// Axios 1.x infers it per request based on the data type:
+//   - plain object  → application/json
+//   - FormData      → multipart/form-data; boundary=… (browser auto-injects boundary)
+//   - URLSearchParams → application/x-www-form-urlencoded
+// Setting a global JSON default would force `formDataToJSON()` on multipart payloads,
+// which silently drops File objects (they serialize to `{}`).
 const api = axios.create({
   baseURL: API_BASE,
-  headers: { 'Content-Type': 'application/json' },
-  timeout: 15000
+  timeout: 15000,
 });
 
 // Attach token to every request
@@ -45,7 +51,21 @@ export const getWeddingMembers = () => api.get('/weddings/current/members');
 export const removeMember = (memberId) => api.delete(`/weddings/current/members/${memberId}`);
 
 // ============ Expense APIs ============
-export const addExpense = (data) => api.post('/expenses', data);
+
+/**
+ * Add expense — accepts a plain object (JSON) or a FormData (multipart with receipt).
+ *
+ * @param {object|FormData} data
+ * @param {(progressEvent: object) => void} [onUploadProgress] — fires as bytes are sent
+ *        (only meaningful for FormData / file uploads)
+ */
+export const addExpense = (data, onUploadProgress) => {
+  const isFormData = data instanceof FormData;
+  return api.post('/expenses', data, isFormData ? {
+    timeout: 60_000, // generous: covers slow networks + Cloudinary roundtrip
+    onUploadProgress,
+  } : undefined);
+};
 export const getExpenses = (params) => api.get('/expenses', { params });
 export const getMyExpenses = () => api.get('/expenses/my');
 export const getExpenseSummary = () => api.get('/expenses/summary');

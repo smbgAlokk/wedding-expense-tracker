@@ -1,17 +1,71 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const multer = require('multer');
 const Expense = require('../models/Expense');
 const Wedding = require('../models/Wedding');
 const Member = require('../models/Member');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { protect, adminOnly } = require('../middleware/auth');
+const {
+  isConfigured: isCloudinaryConfigured,
+  uploadToCloudinary,
+  deleteFromCloudinary,
+} = require('../utils/cloudinary');
+
+// ─── Multer config — in-memory buffer, images only, 5 MB max ────────────────
+const ALLOWED_MIMES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+];
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_MIMES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed (JPG, PNG, WebP, HEIC)'), false);
+    }
+  },
+});
+
+// Wrap multer so we can return a clean JSON error instead of crashing
+const receiptUpload = (req, res, next) => {
+  upload.single('receipt')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Receipt image must be under 5 MB',
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: `Upload error: ${err.message}`,
+      });
+    }
+    if (err) {
+      return res.status(400).json({
+        success: false,
+        message: err.message || 'Invalid file',
+      });
+    }
+    next();
+  });
+};
 
 /**
  * POST /api/expenses
  * Add a new expense (protected)
+ * Accepts multipart/form-data (with optional receipt image) OR JSON
  */
-router.post('/', protect, asyncHandler(async (req, res) => {
+router.post('/', protect, receiptUpload, asyncHandler(async (req, res) => {
   const { amount, category, description, paidBy, vendor, notes } = req.body;
 
   if (!amount || !category) {
@@ -41,6 +95,31 @@ router.post('/', protect, asyncHandler(async (req, res) => {
     });
   }
 
+  // ─── Upload receipt to Cloudinary (optional) ────────────────────────
+  // Receipt is optional. We never block the expense from being saved if the
+  // upload fails — but we DO surface a warning so the client can tell the user
+  // their receipt didn't attach (silent failures are a UX trap).
+  let receiptUrl = '';
+  let receiptPublicId = '';
+  let receiptWarning = null;
+
+  if (req.file) {
+    if (!isCloudinaryConfigured()) {
+      console.warn('[Receipt Upload] Cloudinary not configured — receipt skipped');
+      receiptWarning = 'Receipt storage is not configured. Expense saved without receipt.';
+    } else {
+      try {
+        const folder = `wedding-receipts/${req.weddingId}`;
+        const result = await uploadToCloudinary(req.file.buffer, folder);
+        receiptUrl = result.url;
+        receiptPublicId = result.publicId;
+      } catch (uploadErr) {
+        console.error('[Receipt Upload] Cloudinary error:', uploadErr.message);
+        receiptWarning = 'Could not upload receipt. Expense saved — you can re-add the receipt later.';
+      }
+    }
+  }
+
   const expense = await Expense.create({
     weddingId: req.weddingId,
     memberId: req.member._id,
@@ -49,7 +128,9 @@ router.post('/', protect, asyncHandler(async (req, res) => {
     description: description || '',
     paidBy: paidBy || req.member.name,
     vendor: vendor || '',
-    notes: notes || ''
+    notes: notes || '',
+    receiptUrl,
+    receiptPublicId,
   });
 
   // Populate member info
@@ -58,6 +139,7 @@ router.post('/', protect, asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     message: 'Expense added successfully!',
+    warning: receiptWarning,
     data: { expense }
   });
 }));
@@ -284,6 +366,7 @@ router.put('/:id', protect, asyncHandler(async (req, res) => {
 /**
  * DELETE /api/expenses/:id
  * Delete an expense (owner or admin)
+ * Also cleans up the receipt from Cloudinary if present.
  */
 router.delete('/:id', protect, asyncHandler(async (req, res) => {
   const expense = await Expense.findOne({
@@ -304,6 +387,11 @@ router.delete('/:id', protect, asyncHandler(async (req, res) => {
       success: false,
       message: 'You can only delete your own expenses'
     });
+  }
+
+  // Clean up Cloudinary receipt (fire-and-forget — don't block response)
+  if (expense.receiptPublicId) {
+    deleteFromCloudinary(expense.receiptPublicId);
   }
 
   await Expense.deleteOne({ _id: expense._id });

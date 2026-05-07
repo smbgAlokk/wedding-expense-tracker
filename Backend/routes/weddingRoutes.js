@@ -138,14 +138,21 @@ router.post('/join', asyncHandler(async (req, res) => {
     });
   }
 
-  // Check if member with same name and phone already exists
+  // Check if member with same name already exists (even if removed/inactive)
   const existingMember = await Member.findOne({
     weddingId: wedding._id,
-    name: { $regex: new RegExp(`^${name.trim()}$`, 'i') },
-    isActive: true
+    name: { $regex: new RegExp(`^${name.trim()}$`, 'i') }
   });
 
   if (existingMember) {
+    // If they were previously removed, reactivate them
+    if (!existingMember.isActive) {
+      existingMember.isActive = true;
+      if (relation) existingMember.relation = relation;
+      if (phone) existingMember.phone = phone;
+      await existingMember.save();
+    }
+
     // Re-login existing member
     const token = generateToken(existingMember._id);
     return res.status(200).json({
