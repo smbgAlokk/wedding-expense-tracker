@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 // IMPORTANT: do NOT set a global default `Content-Type`.
 // Axios 1.x infers it per request based on the data type:
