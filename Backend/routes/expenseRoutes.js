@@ -347,7 +347,20 @@ router.put('/:id', protect, asyncHandler(async (req, res) => {
   const { amount, category, description, paidBy, vendor, notes } = req.body;
 
   if (amount !== undefined) expense.amount = parseFloat(amount);
-  if (category) expense.category = category;
+  if (category) {
+    // Validate the new category against the wedding's list (same as create).
+    const wedding = await Wedding.findById(req.weddingId);
+    const validCategory = wedding?.categories.find(
+      c => c.name.toLowerCase() === String(category).toLowerCase()
+    );
+    if (!validCategory) {
+      return res.status(400).json({
+        success: false,
+        message: `"${category}" is not a valid category. Please choose from the available categories.`
+      });
+    }
+    expense.category = validCategory.name;
+  }
   if (description !== undefined) expense.description = description;
   if (paidBy) expense.paidBy = paidBy;
   if (vendor !== undefined) expense.vendor = vendor;
