@@ -14,7 +14,7 @@ const { verifyGoogleCredential } = require('../utils/googleVerify');
 router.post('/login', asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  if (!email || !password) {
+  if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
     return res.status(400).json({
       success: false,
       message: 'Please provide your email and password'
@@ -41,7 +41,7 @@ router.post('/login', asyncHandler(async (req, res) => {
   if (!members || members.length === 0) {
     return res.status(401).json({
       success: false,
-      message: 'No account found with this email. Please check and try again.'
+      message: 'Incorrect email or password. Please try again.'
     });
   }
 
@@ -59,7 +59,7 @@ router.post('/login', asyncHandler(async (req, res) => {
   if (!matchedMember) {
     return res.status(401).json({
       success: false,
-      message: 'Incorrect password. Please try again.'
+      message: 'Incorrect email or password. Please try again.'
     });
   }
 

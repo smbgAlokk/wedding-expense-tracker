@@ -145,12 +145,14 @@ router.post('/', asyncHandler(async (req, res) => {
 router.post('/join', asyncHandler(async (req, res) => {
   const { joinCode, name, relation, phone } = req.body;
 
-  if (!joinCode || !name) {
+  if (!joinCode || typeof joinCode !== 'string' || !name || typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({
       success: false,
       message: 'Please provide the wedding code and your name'
     });
   }
+
+  const trimmedName = name.trim();
 
   // Find wedding by join code
   const wedding = await Wedding.findOne({
@@ -165,13 +167,34 @@ router.post('/join', asyncHandler(async (req, res) => {
     });
   }
 
-  // Check if member with same name already exists (even if removed/inactive)
+  // Check if a member with the same name already exists (even if removed).
+  // The name is matched LITERALLY — escaped, never interpolated as a raw regex.
+  // A raw regex would allow injection / ReDoS and matching arbitrary members.
+  const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const existingMember = await Member.findOne({
     weddingId: wedding._id,
-    name: { $regex: new RegExp(`^${name.trim()}$`, 'i') }
-  });
+    name: { $regex: new RegExp(`^${escapeRegex(trimmedName)}$`, 'i') }
+  }).select('+password');
 
   if (existingMember) {
+    // SECURITY: frictionless name-based re-entry is ONLY for passwordless
+    // members. Otherwise anyone holding the (widely shared) join code could
+    // impersonate a credentialed user — including the admin — just by typing
+    // their name, bypassing the password entirely. Credentialed accounts must
+    // authenticate through Login.
+    const isCredentialed =
+      existingMember.role === 'admin' ||
+      !!existingMember.email ||
+      !!existingMember.googleId ||
+      !!existingMember.password;
+
+    if (isCredentialed) {
+      return res.status(409).json({
+        success: false,
+        message: 'An account with this name already exists. Please use Login instead.'
+      });
+    }
+
     // If they were previously removed, reactivate them
     if (!existingMember.isActive) {
       existingMember.isActive = true;
@@ -179,6 +202,7 @@ router.post('/join', asyncHandler(async (req, res) => {
       if (phone) existingMember.phone = phone;
       await existingMember.save();
     }
+    existingMember.password = undefined;
 
     // Re-login existing member
     const token = generateToken(existingMember._id);
@@ -196,7 +220,7 @@ router.post('/join', asyncHandler(async (req, res) => {
   // Create new member
   const member = await Member.create({
     weddingId: wedding._id,
-    name: name.trim(),
+    name: trimmedName,
     relation: relation || 'Family',
     phone: phone || '',
     role: 'member'

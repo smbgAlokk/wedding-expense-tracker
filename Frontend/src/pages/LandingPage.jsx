@@ -137,7 +137,7 @@ export default function LandingPage() {
       </div>
       {!mode && <HeroSection onSelect={setMode} onGoogleSuccess={handleLoginSuccess} />}
       {mode === 'create' && <CreateForm onBack={() => setMode(null)} login={login} navigate={navigate} />}
-      {mode === 'join' && <JoinForm onBack={() => setMode(null)} login={login} navigate={navigate} onAuthSuccess={handleLoginSuccess} />}
+      {mode === 'join' && <JoinForm onBack={() => setMode(null)} login={login} navigate={navigate} onAuthSuccess={handleLoginSuccess} onSwitchToLogin={() => setMode('login')} />}
       {mode === 'login' && <LoginForm onBack={() => setMode(null)} onSuccess={handleLoginSuccess} />}
       {mode === 'select-wedding' && <SelectWeddingForm weddings={weddingList} onSelect={handleSelectWedding} onBack={() => setMode('login')} />}
     </div>
@@ -465,11 +465,21 @@ function SelectWeddingForm({ weddings, onSelect, onBack }) {
   );
 }
 
-function JoinForm({ onBack, login, navigate, onAuthSuccess }) {
+function JoinForm({ onBack, login, navigate, onAuthSuccess, onSwitchToLogin }) {
   const { t, tServer } = useLang();
   const [form, setForm] = useState({ joinCode: '', name: '', relation: '' });
   const [loading, setLoading] = useState(false);
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  // A credentialed account (admin / has a password or Google) can't re-enter by
+  // name — the backend returns 409. Guide them to Login instead of just erroring.
+  const handleJoinError = (err, fallbackKey) => {
+    const msg = tServer(err.response?.data?.message) || t(fallbackKey);
+    toast.error(msg);
+    if (err.response?.status === 409 && onSwitchToLogin) {
+      setTimeout(() => onSwitchToLogin(), 1200);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -482,7 +492,7 @@ function JoinForm({ onBack, login, navigate, onAuthSuccess }) {
       toast.success(tServer(res.data.message) || t('login.welcomeBack'));
       navigate('/dashboard');
     } catch (err) {
-      toast.error(tServer(err.response?.data?.message) || t('join.errFailed'));
+      handleJoinError(err, 'join.errFailed');
     } finally { setLoading(false); }
   };
 
@@ -496,7 +506,7 @@ function JoinForm({ onBack, login, navigate, onAuthSuccess }) {
       const res = await googleLogin({ credential, joinCode: form.joinCode.toUpperCase().trim() });
       onAuthSuccess(res.data.data);
     } catch (err) {
-      toast.error(tServer(err.response?.data?.message) || t('login.errGoogleFailed'));
+      handleJoinError(err, 'login.errGoogleFailed');
     } finally { setLoading(false); }
   };
 

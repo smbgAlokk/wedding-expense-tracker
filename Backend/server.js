@@ -10,8 +10,15 @@ const weddingRoutes = require('./routes/weddingRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const authRoutes = require('./routes/authRoutes');
 const { errorHandler } = require('./middleware/errorHandler');
+const { mongoSanitize } = require('./middleware/sanitize');
 
 const app = express();
+
+// Behind a reverse proxy (Railway / Vercel). Without this, express-rate-limit
+// and req.ip see the proxy's IP instead of the real client — breaking rate
+// limiting (everyone shares one bucket, or X-Forwarded-For can be spoofed).
+// `1` trusts a single proxy hop, which is what these platforms provide.
+app.set('trust proxy', 1);
 
 // ===========================================
 // Security Middleware
@@ -65,6 +72,9 @@ app.use('/api/auth', authLimiter);
 // ===========================================
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Strip MongoDB operators ($, .) from incoming body/query/params
+app.use(mongoSanitize);
 
 // ===========================================
 // Logging

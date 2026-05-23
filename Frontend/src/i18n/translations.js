@@ -666,6 +666,8 @@ const SERVER_EXACT_HI = {
   'Could not get email from Google account': 'Google अकाउंट से ईमेल नहीं मिला',
   'No account found with this Google email. Please create a wedding first or join one with a code.': 'इस Google ईमेल से कोई अकाउंट नहीं मिला। पहले शादी बनाएँ या कोड से जुड़ें।',
   'No wedding found with this code.': 'इस कोड से कोई शादी नहीं मिली।',
+  'Incorrect email or password. Please try again.': 'ईमेल या पासवर्ड गलत है। दोबारा कोशिश करें।',
+  'An account with this name already exists. Please use Login instead.': 'इस नाम से पहले से एक अकाउंट है। कृपया लॉगिन करें।',
   'Wedding details updated': 'शादी की जानकारी अपडेट हो गई',
   'Expense updated': 'खर्च अपडेट हो गया',
   'Expense deleted': 'खर्च हटा दिया',
