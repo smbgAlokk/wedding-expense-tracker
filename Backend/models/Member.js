@@ -42,6 +42,14 @@ const memberSchema = new mongoose.Schema({
     type: String,
     sparse: true
   },
+  resetPasswordToken: {
+    type: String,
+    select: false // hashed token; never returned by default
+  },
+  resetPasswordExpires: {
+    type: Date,
+    select: false
+  },
   relation: {
     type: String,
     trim: true,
@@ -123,6 +131,8 @@ memberSchema.methods.toJSON = function() {
   const obj = this.toObject();
   delete obj.password;
   delete obj.googleId;
+  delete obj.resetPasswordToken;
+  delete obj.resetPasswordExpires;
   return obj;
 };
 

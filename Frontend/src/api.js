@@ -41,6 +41,8 @@ api.interceptors.response.use(
 export const loginUser = (data) => api.post('/auth/login', data);
 export const googleLogin = (data) => api.post('/auth/google', data);
 export const selectWedding = (data) => api.post('/auth/login/select-wedding', data);
+export const forgotPassword = (email) => api.post('/auth/forgot-password', { email });
+export const resetPassword = (token, password) => api.post('/auth/reset-password', { token, password });
 
 // ============ Wedding APIs ============
 export const createWedding = (data) => api.post('/weddings', data);

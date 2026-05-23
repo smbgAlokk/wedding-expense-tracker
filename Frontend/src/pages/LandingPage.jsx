@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useWedding } from '../context/WeddingContext';
 import { useLang } from '../context/LanguageContext';
-import { createWedding, joinWedding, loginUser, googleLogin, selectWedding } from '../api';
+import { createWedding, joinWedding, loginUser, googleLogin, selectWedding, forgotPassword } from '../api';
 import ThemeToggle from '../components/ThemeToggle';
 import LanguageToggle from '../components/LanguageToggle';
 
@@ -90,7 +90,7 @@ function OrDivider() {
 }
 
 export default function LandingPage() {
-  const [mode, setMode] = useState(null); // null | 'create' | 'join' | 'login' | 'select-wedding'
+  const [mode, setMode] = useState(null); // null | 'create' | 'join' | 'login' | 'select-wedding' | 'forgot'
   const { login } = useWedding();
   const { t, tServer } = useLang();
   const navigate = useNavigate();
@@ -138,7 +138,8 @@ export default function LandingPage() {
       {!mode && <HeroSection onSelect={setMode} onGoogleSuccess={handleLoginSuccess} />}
       {mode === 'create' && <CreateForm onBack={() => setMode(null)} login={login} navigate={navigate} />}
       {mode === 'join' && <JoinForm onBack={() => setMode(null)} login={login} navigate={navigate} onAuthSuccess={handleLoginSuccess} onSwitchToLogin={() => setMode('login')} />}
-      {mode === 'login' && <LoginForm onBack={() => setMode(null)} onSuccess={handleLoginSuccess} />}
+      {mode === 'login' && <LoginForm onBack={() => setMode(null)} onSuccess={handleLoginSuccess} onForgot={() => setMode('forgot')} />}
+      {mode === 'forgot' && <ForgotPasswordForm onBack={() => setMode('login')} />}
       {mode === 'select-wedding' && <SelectWeddingForm weddings={weddingList} onSelect={handleSelectWedding} onBack={() => setMode('login')} />}
     </div>
   );
@@ -361,7 +362,7 @@ function CreateForm({ onBack, login, navigate }) {
   );
 }
 
-function LoginForm({ onBack, onSuccess }) {
+function LoginForm({ onBack, onSuccess, onForgot }) {
   const { t, tServer } = useLang();
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
@@ -416,8 +417,66 @@ function LoginForm({ onBack, onSuccess }) {
         </button>
       </form>
 
+      <div style={{ textAlign: 'center', marginTop: 14 }}>
+        <button type="button" onClick={onForgot} id="btn-forgot-password" style={{ background: 'none', border: 'none', color: 'var(--primary-light)', fontSize: '0.85rem', fontWeight: 500, cursor: 'pointer', padding: 4 }}>
+          {t('login.forgotPassword')}
+        </button>
+      </div>
+
       <OrDivider />
       <GoogleAuthButton text="signin_with" onCredential={handleGoogleLogin} />
+    </div>
+  );
+}
+
+function ForgotPasswordForm({ onBack }) {
+  const { t, tServer } = useLang();
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!email.trim()) return toast.error(t('forgot.errEmail'));
+    setLoading(true);
+    try {
+      await forgotPassword(email.trim());
+      setSent(true); // backend always returns a generic success (anti-enumeration)
+    } catch (err) {
+      // Only network/unexpected errors reach here.
+      toast.error(tServer(err.response?.data?.message) || t('forgot.errFailed'));
+    } finally { setLoading(false); }
+  };
+
+  if (sent) {
+    return (
+      <div className="animate-in" style={{ width: '100%', maxWidth: 420, margin: '0 auto', textAlign: 'center' }}>
+        <div style={{ fontSize: '3rem', marginBottom: 'var(--space-4)' }}>📧</div>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 'var(--space-3)' }}>{t('forgot.sentTitle')}</h1>
+        <p className="text-muted" style={{ fontSize: '0.92rem', marginBottom: 24, lineHeight: 1.6 }}>
+          {t('forgot.sentBody')}
+        </p>
+        <button className="btn btn-secondary btn-full btn-lg" onClick={onBack}>{t('forgot.backToLogin')}</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="animate-in" style={{ width: '100%', maxWidth: 420, margin: '0 auto' }}>
+      <div className="page-header">
+        <button className="back-btn" onClick={onBack} aria-label="Back">←</button>
+        <h1>{t('forgot.header')}</h1>
+      </div>
+      <p className="text-muted" style={{ fontSize: '0.92rem', marginBottom: 24 }}>{t('forgot.subtitle')}</p>
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label className="form-label">{t('forgot.email')}</label>
+          <input className="form-input" type="email" autoComplete="email" placeholder={t('login.emailPlaceholder')} value={email} onChange={e => setEmail(e.target.value)} id="input-forgot-email" autoFocus />
+        </div>
+        <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-forgot" style={{ marginTop: 8 }}>
+          {loading ? t('forgot.sending') : t('forgot.submitBtn')}
+        </button>
+      </form>
     </div>
   );
 }
