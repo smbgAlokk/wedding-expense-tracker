@@ -5,6 +5,7 @@ const Wedding = require('../models/Wedding');
 const Member = require('../models/Member');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { protect, adminOnly, generateToken } = require('../middleware/auth');
+const { verifyGoogleCredential } = require('../utils/googleVerify');
 
 /**
  * POST /api/weddings
@@ -12,7 +13,7 @@ const { protect, adminOnly, generateToken } = require('../middleware/auth');
  * Now requires email + password for the admin creator
  */
 router.post('/', asyncHandler(async (req, res) => {
-  const { weddingName, partner1, partner2, weddingDate, totalBudget, currency, adminName, adminRelation, adminPhone, email, password, confirmPassword } = req.body;
+  const { weddingName, partner1, partner2, weddingDate, totalBudget, currency, adminName, adminRelation, adminPhone, email, password, confirmPassword, googleCredential } = req.body;
 
   // Validate required wedding fields
   if (!weddingName || !partner1 || !partner2 || !weddingDate) {
@@ -29,44 +30,68 @@ router.post('/', asyncHandler(async (req, res) => {
     });
   }
 
-  // Validate email + password for admin
-  if (!email) {
-    return res.status(400).json({
-      success: false,
-      message: 'Please provide your email address'
-    });
-  }
+  // Resolve the admin's identity — either via Google or via email + password.
+  // (One email can create multiple weddings — that is allowed.)
+  let adminEmail;
+  let adminPassword;          // undefined for Google accounts (no password)
+  let adminAuthProvider = 'local';
+  let adminGoogleId;
+  let adminAvatar;
 
-  if (!validator.isEmail(email)) {
-    return res.status(400).json({
-      success: false,
-      message: 'Please provide a valid email address'
-    });
-  }
+  if (googleCredential) {
+    let googleUser;
+    try {
+      googleUser = await verifyGoogleCredential(googleCredential);
+    } catch (err) {
+      return res.status(err.statusCode || 401).json({
+        success: false,
+        message: err.message
+      });
+    }
+    adminEmail = googleUser.email;
+    adminAuthProvider = 'google';
+    adminGoogleId = googleUser.googleId;
+    adminAvatar = googleUser.picture;
+  } else {
+    // Local: validate email + password for admin
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide your email address'
+      });
+    }
 
-  if (!password) {
-    return res.status(400).json({
-      success: false,
-      message: 'Please create a password'
-    });
-  }
+    if (!validator.isEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email address'
+      });
+    }
 
-  if (password.length < 6) {
-    return res.status(400).json({
-      success: false,
-      message: 'Password must be at least 6 characters'
-    });
-  }
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please create a password'
+      });
+    }
 
-  if (password !== confirmPassword) {
-    return res.status(400).json({
-      success: false,
-      message: 'Passwords do not match'
-    });
-  }
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
+      });
+    }
 
-  // Check if this email already has an admin account in another wedding
-  // (allowed — one email can create multiple weddings)
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Passwords do not match'
+      });
+    }
+
+    adminEmail = email.toLowerCase().trim();
+    adminPassword = password;
+  }
 
   // Create the wedding
   const wedding = await Wedding.create({
@@ -80,13 +105,15 @@ router.post('/', asyncHandler(async (req, res) => {
     currency: currency || '₹'
   });
 
-  // Create the admin member with email + hashed password
+  // Create the admin member (password for local, googleId/avatar for Google)
   const admin = await Member.create({
     weddingId: wedding._id,
     name: adminName.trim(),
-    email: email.toLowerCase().trim(),
-    password,
-    authProvider: 'local',
+    email: adminEmail,
+    ...(adminPassword ? { password: adminPassword } : {}),
+    authProvider: adminAuthProvider,
+    ...(adminGoogleId ? { googleId: adminGoogleId } : {}),
+    ...(adminAvatar ? { avatar: adminAvatar } : {}),
     relation: adminRelation || 'Organizer',
     phone: adminPhone || '',
     role: 'admin'

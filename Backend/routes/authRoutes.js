@@ -5,6 +5,7 @@ const Member = require('../models/Member');
 const Wedding = require('../models/Wedding');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { generateToken } = require('../middleware/auth');
+const { verifyGoogleCredential } = require('../utils/googleVerify');
 
 /**
  * POST /api/auth/login
@@ -27,11 +28,14 @@ router.post('/login', asyncHandler(async (req, res) => {
     });
   }
 
-  // Find member with this email (include password for comparison)
-  // A user can have accounts in multiple weddings — find all active ones
+  // Find member with this email (include password for comparison).
+  // A user can have accounts in multiple weddings — find all of them.
+  // Note: we deliberately do NOT filter by authProvider. A member who created
+  // their account locally may later link Google; their password must still work.
+  // comparePassword() returns false for members without a password (Google-only),
+  // so those are correctly rejected.
   const members = await Member.find({
-    email: email.toLowerCase().trim(),
-    authProvider: 'local'
+    email: email.toLowerCase().trim()
   }).select('+password').populate('weddingId');
 
   if (!members || members.length === 0) {
@@ -163,35 +167,19 @@ router.post('/login/select-wedding', asyncHandler(async (req, res) => {
 router.post('/google', asyncHandler(async (req, res) => {
   const { credential, joinCode } = req.body;
 
-  if (!credential) {
-    return res.status(400).json({
-      success: false,
-      message: 'Google credential is required'
-    });
-  }
-
-  // Decode the Google JWT credential (header.payload.signature)
-  // In production, verify with Google's public keys. For now, decode payload.
-  let payload;
+  // Verify the Google credential against Google's public keys (signature,
+  // audience, issuer, expiry). Throws with a statusCode on any failure.
+  let googleUser;
   try {
-    const base64Url = credential.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    payload = JSON.parse(Buffer.from(base64, 'base64').toString());
+    googleUser = await verifyGoogleCredential(credential);
   } catch (err) {
-    return res.status(400).json({
+    return res.status(err.statusCode || 401).json({
       success: false,
-      message: 'Invalid Google credential'
+      message: err.message
     });
   }
 
-  const { email, name, sub: googleId, picture } = payload;
-
-  if (!email) {
-    return res.status(400).json({
-      success: false,
-      message: 'Could not get email from Google account'
-    });
-  }
+  const { email, name, googleId, picture } = googleUser;
 
   // Find existing members with this email
   const existingMembers = await Member.find({
@@ -200,19 +188,16 @@ router.post('/google', asyncHandler(async (req, res) => {
 
   // Case 1: Existing user — log them in
   if (existingMembers.length > 0) {
-    // Reactivate if needed
     for (const m of existingMembers) {
-      if (!m.isActive) {
-        m.isActive = true;
-        await m.save();
-      }
-      // Link Google ID if not already linked
-      if (!m.googleId) {
-        m.googleId = googleId;
-        m.authProvider = 'google';
-        if (picture && !m.avatar) m.avatar = picture;
-        await m.save();
-      }
+      let dirty = false;
+      // Reactivate if previously removed
+      if (!m.isActive) { m.isActive = true; dirty = true; }
+      // Link Google ID if not already linked. We intentionally do NOT change
+      // authProvider — a local (password) member who signs in with Google keeps
+      // both methods, so their password login continues to work.
+      if (!m.googleId) { m.googleId = googleId; dirty = true; }
+      if (picture && !m.avatar) { m.avatar = picture; dirty = true; }
+      if (dirty) await m.save();
     }
 
     if (existingMembers.length > 1) {

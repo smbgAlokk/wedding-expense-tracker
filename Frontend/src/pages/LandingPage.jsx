@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useWedding } from '../context/WeddingContext';
@@ -6,6 +6,88 @@ import { useLang } from '../context/LanguageContext';
 import { createWedding, joinWedding, loginUser, googleLogin, selectWedding } from '../api';
 import ThemeToggle from '../components/ThemeToggle';
 import LanguageToggle from '../components/LanguageToggle';
+
+// Reusable Google Identity Services button. Renders Google's official button and
+// forwards the verified credential to onCredential. Only one is mounted at a time
+// (the page shows one form at a time), so the global initialize() call is safe.
+//
+// The GSI script in index.html is `async defer`, so window.google may not exist
+// yet when this mounts. We poll until it is ready (with cleanup + timeout) instead
+// of giving up on the first try — otherwise the button silently never appears.
+function GoogleAuthButton({ onCredential, text = 'continue_with' }) {
+  const { t } = useLang();
+  const containerRef = useRef(null);
+  const cbRef = useRef(onCredential);
+  cbRef.current = onCredential;
+  const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'unavailable'
+
+  useEffect(() => {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (!clientId) { setStatus('unavailable'); return; }
+
+    let cancelled = false;
+    let timer;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 60; // ~6s at 100ms intervals
+
+    const render = () => {
+      if (cancelled || !containerRef.current) return;
+      const gsi = window.google?.accounts?.id;
+      if (gsi) {
+        gsi.initialize({
+          client_id: clientId,
+          callback: (response) => cbRef.current(response.credential),
+        });
+        containerRef.current.innerHTML = '';
+        const width = Math.min(containerRef.current.offsetWidth || 320, 400);
+        gsi.renderButton(containerRef.current, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+          shape: 'pill',
+          text,
+          logo_alignment: 'center',
+          width,
+        });
+        setStatus('ready');
+        return;
+      }
+      attempts += 1;
+      if (attempts >= MAX_ATTEMPTS) { setStatus('unavailable'); return; }
+      timer = setTimeout(render, 100);
+    };
+
+    render();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [text]);
+
+  return (
+    <div>
+      <div ref={containerRef} style={{ display: 'flex', justifyContent: 'center', minHeight: 44 }} />
+      {status === 'loading' && (
+        <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: 8 }}>
+          {t('login.googleLoading')}
+        </p>
+      )}
+      {status === 'unavailable' && (
+        <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: 8 }}>
+          {t('login.googleConfigHint')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function OrDivider() {
+  const { t } = useLang();
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '24px 0 16px' }}>
+      <div style={{ flex: 1, height: 1, background: 'var(--divider)' }} />
+      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 500 }}>{t('common.or')}</span>
+      <div style={{ flex: 1, height: 1, background: 'var(--divider)' }} />
+    </div>
+  );
+}
 
 export default function LandingPage() {
   const [mode, setMode] = useState(null); // null | 'create' | 'join' | 'login' | 'select-wedding'
@@ -53,17 +135,29 @@ export default function LandingPage() {
         <LanguageToggle />
         <ThemeToggle />
       </div>
-      {!mode && <HeroSection onSelect={setMode} />}
+      {!mode && <HeroSection onSelect={setMode} onGoogleSuccess={handleLoginSuccess} />}
       {mode === 'create' && <CreateForm onBack={() => setMode(null)} login={login} navigate={navigate} />}
-      {mode === 'join' && <JoinForm onBack={() => setMode(null)} login={login} navigate={navigate} />}
+      {mode === 'join' && <JoinForm onBack={() => setMode(null)} login={login} navigate={navigate} onAuthSuccess={handleLoginSuccess} />}
       {mode === 'login' && <LoginForm onBack={() => setMode(null)} onSuccess={handleLoginSuccess} />}
       {mode === 'select-wedding' && <SelectWeddingForm weddings={weddingList} onSelect={handleSelectWedding} onBack={() => setMode('login')} />}
     </div>
   );
 }
 
-function HeroSection({ onSelect }) {
-  const { t } = useLang();
+function HeroSection({ onSelect, onGoogleSuccess }) {
+  const { t, tServer } = useLang();
+
+  // Returning members: one tap to sign in. New users (no account yet) get a
+  // friendly nudge to create a wedding or join with a code.
+  const handleHeroGoogle = async (credential) => {
+    try {
+      const res = await googleLogin({ credential });
+      onGoogleSuccess(res.data.data);
+    } catch (err) {
+      toast.error(tServer(err.response?.data?.message) || t('login.errGoogleFailed'));
+    }
+  };
+
   return (
     <div className="animate-in" style={{ textAlign: 'center', maxWidth: 460, margin: '0 auto', width: '100%' }}>
       <div style={{
@@ -102,6 +196,12 @@ function HeroSection({ onSelect }) {
           {t('landing.loginBtn')}
         </button>
       </div>
+
+      <div style={{ maxWidth: 360, margin: '0 auto' }}>
+        <OrDivider />
+        <GoogleAuthButton text="continue_with" onCredential={handleHeroGoogle} />
+      </div>
+
       <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 'var(--space-6)', lineHeight: 1.6 }}>
         {t('landing.helperHint')}
       </p>
@@ -120,11 +220,25 @@ function CreateForm({ onBack, login, navigate }) {
   const [showPassword, setShowPassword] = useState(false);
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
+  // Wedding + admin-name fields are required for BOTH local and Google signup.
+  const validateWeddingFields = () => {
+    if (!form.weddingName || !form.partner1 || !form.partner2 || !form.weddingDate || !form.adminName) {
+      toast.error(t('create.errFillRequired'));
+      return false;
+    }
+    return true;
+  };
+
+  const finishCreate = (res) => {
+    const { wedding, member, token } = res.data.data;
+    login(member, wedding, token);
+    toast.success(t('create.successCode', { code: wedding.joinCode }));
+    navigate('/dashboard');
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.weddingName || !form.partner1 || !form.partner2 || !form.weddingDate || !form.adminName) {
-      return toast.error(t('create.errFillRequired'));
-    }
+    if (!validateWeddingFields()) return;
     if (!form.email) return toast.error(t('create.errEmail'));
     if (!form.password) return toast.error(t('create.errPassword'));
     if (form.password.length < 6) return toast.error(t('create.errPasswordLength'));
@@ -134,12 +248,32 @@ function CreateForm({ onBack, login, navigate }) {
     try {
       const adminRelation = form.adminRelation || t('create.adminRelationDefault');
       const res = await createWedding({ ...form, adminRelation, totalBudget: parseFloat(form.totalBudget) || 0 });
-      const { wedding, member, token } = res.data.data;
-      login(member, wedding, token);
-      toast.success(t('create.successCode', { code: wedding.joinCode }));
-      navigate('/dashboard');
+      finishCreate(res);
     } catch (err) {
       toast.error(tServer(err.response?.data?.message) || t('create.errFailed'));
+    } finally { setLoading(false); }
+  };
+
+  // Create the wedding using a Google account instead of email + password.
+  // Wedding details still come from the form; identity comes from Google.
+  const handleGoogleSignup = async (credential) => {
+    if (!validateWeddingFields()) return;
+    setLoading(true);
+    try {
+      const adminRelation = form.adminRelation || t('create.adminRelationDefault');
+      const res = await createWedding({
+        weddingName: form.weddingName,
+        partner1: form.partner1,
+        partner2: form.partner2,
+        weddingDate: form.weddingDate,
+        totalBudget: parseFloat(form.totalBudget) || 0,
+        adminName: form.adminName,
+        adminRelation,
+        googleCredential: credential,
+      });
+      finishCreate(res);
+    } catch (err) {
+      toast.error(tServer(err.response?.data?.message) || t('login.errGoogleFailed'));
     } finally { setLoading(false); }
   };
 
@@ -217,6 +351,12 @@ function CreateForm({ onBack, login, navigate }) {
           {loading ? t('create.creating') : t('create.submitBtn')}
         </button>
       </form>
+
+      <OrDivider />
+      <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: 12, lineHeight: 1.5 }}>
+        {t('create.googleHint')}
+      </p>
+      <GoogleAuthButton text="signup_with" onCredential={handleGoogleSignup} />
     </div>
   );
 }
@@ -240,36 +380,14 @@ function LoginForm({ onBack, onSuccess }) {
     } finally { setLoading(false); }
   };
 
-  const handleGoogleLogin = useCallback(async (response) => {
+  const handleGoogleLogin = async (credential) => {
     try {
-      const res = await googleLogin({ credential: response.credential });
+      const res = await googleLogin({ credential });
       onSuccess(res.data.data);
     } catch (err) {
       toast.error(tServer(err.response?.data?.message) || t('login.errGoogleFailed'));
     }
-  }, [onSuccess, t, tServer]);
-
-  useEffect(() => {
-    const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!googleClientId || typeof window.google === 'undefined') return;
-
-    window.google.accounts.id.initialize({
-      client_id: googleClientId,
-      callback: handleGoogleLogin
-    });
-
-    window.google.accounts.id.renderButton(
-      document.getElementById('google-signin-btn'),
-      {
-        theme: 'filled_black',
-        size: 'large',
-        width: '100%',
-        shape: 'pill',
-        text: 'signin_with',
-        logo_alignment: 'center'
-      }
-    );
-  }, [handleGoogleLogin]);
+  };
 
   return (
     <div className="animate-in" style={{ width: '100%', maxWidth: 420, margin: '0 auto' }}>
@@ -298,18 +416,8 @@ function LoginForm({ onBack, onSuccess }) {
         </button>
       </form>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '28px 0 16px' }}>
-        <div style={{ flex: 1, height: 1, background: 'var(--divider)' }} />
-        <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 500 }}>{t('common.or')}</span>
-        <div style={{ flex: 1, height: 1, background: 'var(--divider)' }} />
-      </div>
-      <div id="google-signin-btn" style={{ display: 'flex', justifyContent: 'center', marginBottom: 16, minHeight: 44 }} />
-
-      {typeof window !== 'undefined' && typeof window.google === 'undefined' && (
-        <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-          {t('login.googleConfigHint')}
-        </p>
-      )}
+      <OrDivider />
+      <GoogleAuthButton text="signin_with" onCredential={handleGoogleLogin} />
     </div>
   );
 }
@@ -357,7 +465,7 @@ function SelectWeddingForm({ weddings, onSelect, onBack }) {
   );
 }
 
-function JoinForm({ onBack, login, navigate }) {
+function JoinForm({ onBack, login, navigate, onAuthSuccess }) {
   const { t, tServer } = useLang();
   const [form, setForm] = useState({ joinCode: '', name: '', relation: '' });
   const [loading, setLoading] = useState(false);
@@ -375,6 +483,20 @@ function JoinForm({ onBack, login, navigate }) {
       navigate('/dashboard');
     } catch (err) {
       toast.error(tServer(err.response?.data?.message) || t('join.errFailed'));
+    } finally { setLoading(false); }
+  };
+
+  // Join the wedding using a Google account. The join code is still required;
+  // the member's name/email come from Google. Existing users with this Google
+  // email are logged in (and may be routed to the multi-wedding selector).
+  const handleGoogleJoin = async (credential) => {
+    if (!form.joinCode) return toast.error(t('join.errCodeNeeded'));
+    setLoading(true);
+    try {
+      const res = await googleLogin({ credential, joinCode: form.joinCode.toUpperCase().trim() });
+      onAuthSuccess(res.data.data);
+    } catch (err) {
+      toast.error(tServer(err.response?.data?.message) || t('login.errGoogleFailed'));
     } finally { setLoading(false); }
   };
 
@@ -411,6 +533,12 @@ function JoinForm({ onBack, login, navigate }) {
           {loading ? t('join.joining') : t('join.submitBtn')}
         </button>
       </form>
+
+      <OrDivider />
+      <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: 12, lineHeight: 1.5 }}>
+        {t('join.googleHint')}
+      </p>
+      <GoogleAuthButton text="continue_with" onCredential={handleGoogleJoin} />
     </div>
   );
 }
