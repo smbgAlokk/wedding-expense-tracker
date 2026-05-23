@@ -109,7 +109,7 @@ export const translations = {
     // Dashboard
     'dashboard.welcome': 'Welcome, {name} 👋',
     'dashboard.fallbackName': 'Wedding Tracker',
-    'dashboard.totalExpenses': 'Total Wedding Expenses',
+    'dashboard.totalExpenses': 'Total Wedding Expense',
     'dashboard.percentUsed': '{percent}% used',
     'dashboard.amountLeft': '{amount} left',
     'dashboard.amountOver': '{amount} over!',
