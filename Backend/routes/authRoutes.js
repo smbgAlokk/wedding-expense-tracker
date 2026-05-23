@@ -1,11 +1,18 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const validator = require('validator');
 const Member = require('../models/Member');
 const Wedding = require('../models/Wedding');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { generateToken } = require('../middleware/auth');
 const { verifyGoogleCredential } = require('../utils/googleVerify');
+const { sendPasswordResetEmail } = require('../utils/email');
+
+const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+const hashToken = (raw) => crypto.createHash('sha256').update(raw).digest('hex');
+const frontendBaseUrl = () =>
+  (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim().replace(/\/$/, '');
 
 /**
  * POST /api/auth/login
@@ -275,6 +282,110 @@ router.post('/google', asyncHandler(async (req, res) => {
   return res.status(404).json({
     success: false,
     message: 'No account found with this Google email. Please create a wedding first or join one with a code.'
+  });
+}));
+
+/**
+ * POST /api/auth/forgot-password
+ * Request a password-reset link. Always responds with the same generic message
+ * (whether or not the email exists) to prevent account enumeration.
+ */
+router.post('/forgot-password', asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  // Single response shape for every outcome — no enumeration.
+  const generic = () => res.status(200).json({
+    success: true,
+    message: 'If an account exists for this email, a reset link has been sent.'
+  });
+
+  if (!email || typeof email !== 'string' || !validator.isEmail(email)) {
+    return generic();
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  // Only accounts that actually have a password can reset one.
+  // (Google-only members sign in with Google — no password to reset.)
+  const members = await Member.find({ email: normalizedEmail }).select('+password');
+  const resettable = members.filter((m) => m.password);
+
+  if (resettable.length === 0) {
+    return generic();
+  }
+
+  // One raw token, stored hashed on every account sharing this email so the
+  // password stays consistent across a user's multiple weddings.
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashToken(rawToken);
+  const expires = new Date(Date.now() + RESET_TOKEN_EXPIRY_MS);
+
+  for (const m of resettable) {
+    m.resetPasswordToken = tokenHash;
+    m.resetPasswordExpires = expires;
+    await m.save({ validateBeforeSave: false });
+  }
+
+  const resetUrl = `${frontendBaseUrl()}/reset-password?token=${rawToken}`;
+  try {
+    await sendPasswordResetEmail(normalizedEmail, resetUrl, resettable[0].name);
+  } catch (err) {
+    // Never leak whether sending succeeded; the token is already stored.
+    console.error('[forgot-password] email send failed:', err.message);
+  }
+
+  return generic();
+}));
+
+/**
+ * POST /api/auth/reset-password
+ * Complete a password reset using the token from the email link.
+ */
+router.post('/reset-password', asyncHandler(async (req, res) => {
+  const { token, password } = req.body;
+
+  if (!token || typeof token !== 'string' || !password || typeof password !== 'string') {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid request. Please provide a token and a new password.'
+    });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must be at least 6 characters'
+    });
+  }
+
+  const tokenHash = hashToken(token);
+  const member = await Member.findOne({
+    resetPasswordToken: tokenHash,
+    resetPasswordExpires: { $gt: new Date() }
+  }).select('+password');
+
+  if (!member) {
+    return res.status(400).json({
+      success: false,
+      message: 'This reset link is invalid or has expired. Please request a new one.'
+    });
+  }
+
+  // Apply the new password to every password-holding account with this email
+  // (multi-wedding consistency), and clear all reset tokens.
+  const sameEmailMembers = await Member.find({ email: member.email }).select('+password');
+  for (const m of sameEmailMembers) {
+    if (m.password || m._id.equals(member._id)) {
+      m.password = password; // pre-save hook hashes it
+      m.resetPasswordToken = undefined;
+      m.resetPasswordExpires = undefined;
+      await m.save();
+    }
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: 'Your password has been reset. You can now log in.'
   });
 }));
 
