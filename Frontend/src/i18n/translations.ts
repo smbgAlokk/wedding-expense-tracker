@@ -21,6 +21,7 @@ export const translations = {
     'common.notSet': 'Not set',
     'common.or': 'or',
     'common.and': '&',
+    'common.loading': 'Loading…',
 
     // Landing — Hero
     'landing.title1': 'Wedding',
@@ -368,6 +369,7 @@ export const translations = {
     'common.notSet': 'अभी नहीं भरी',
     'common.or': 'या',
     'common.and': 'और',
+    'common.loading': 'लोड हो रहा है…',
 
     // Landing — Hero
     'landing.title1': 'शादी',

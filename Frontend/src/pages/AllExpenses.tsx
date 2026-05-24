@@ -7,6 +7,7 @@ import { useLang } from '../context/LanguageContext';
 import { fmtSimple, fmtDate } from '../utils/format';
 import { getExpenses, deleteExpense } from '../api';
 import ExpenseDetailSheet from '../components/ExpenseDetailSheet';
+import Loader from '../components/Loader';
 import { SortableFilterableTableHeader, SortState, FilterState } from '../UI/SortableFilterableTableHeader';
 import '../AllExpensesTable.css';
 
@@ -219,7 +220,7 @@ export default function AllExpenses() {
       </div>
 
       {loading ? (
-        <div>{[1,2,3,4,5].map(i => <div key={i} className="skeleton" style={{ height: 76, marginBottom: 8 }} />)}</div>
+        <Loader label={t('common.loading')} />
       ) : expenses.length === 0 && filter === 'all' && Object.keys(filterState).length === 0 ? (
         <div className="surface-card empty-state" style={{ padding: 'var(--space-12) var(--space-5)' }}>
           <div className="emoji">📊</div>

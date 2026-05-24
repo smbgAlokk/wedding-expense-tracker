@@ -39,7 +39,14 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key'],
+  // Cache the CORS preflight for 24h. Every authenticated request carries an
+  // Authorization header, which makes it a "non-simple" cross-origin request —
+  // so without this the browser fires an extra OPTIONS round-trip before nearly
+  // every GET (its default preflight cache is only a few seconds). This single
+  // header roughly halves the perceived latency of each API call in production.
+  maxAge: 86400,
+  optionsSuccessStatus: 204
 }));
 
 // Rate limiting - prevent abuse
