@@ -24,6 +24,15 @@ import ReceiptViewer from './ReceiptViewer';
  *  - onDelete     {function|null} If provided, renders a delete button
  *  - showMember   {boolean}      Whether to show who added it (false for MyExpenses)
  */
+interface Props {
+  expense: any;
+  currency?: string;
+  categoryIcon?: string;
+  onClose: () => void;
+  onDelete?: ((id: string) => void) | null;
+  showMember?: boolean;
+}
+
 export default function ExpenseDetailSheet({
   expense,
   currency = '₹',
@@ -31,7 +40,7 @@ export default function ExpenseDetailSheet({
   onClose,
   onDelete,
   showMember = true,
-}) {
+}: Props) {
   const { t, tCat, lang } = useLang();
   const [viewerOpen, setViewerOpen] = useState(false);
 

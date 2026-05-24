@@ -2,14 +2,22 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import { WeddingProvider } from './context/WeddingContext'
-import { LanguageProvider } from './context/LanguageContext'
+import { WeddingProvider } from './context/WeddingProvider'
+import { LanguageProvider } from './context/LanguageProvider'
 import App from './App'
 import './index.css'
 
+// Initialize theme immediately to prevent FOUC and missing theme on direct loads
+try {
+  const initialTheme = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', initialTheme);
+} catch {
+  document.documentElement.setAttribute('data-theme', 'dark');
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <LanguageProvider>
         <WeddingProvider>
           <App />

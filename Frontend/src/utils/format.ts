@@ -2,13 +2,13 @@
 // Numerals stay in Latin digits even in Hindi mode (most Indian users read
 // "1,00,000" more comfortably than "१,००,०००"). Only labels translate.
 
-export function fmtAmount(n, currency = '₹', t) {
+export function fmtAmount(n: number | string, currency: string = '₹', t?: (key: string) => string): string {
   const num = Number(n) || 0;
   const abs = Math.abs(num);
   const sign = num < 0 ? '-' : '';
 
   // Helper for the K/L/Cr suffixes — when t() is provided use it, else fall back.
-  const suffix = (key) => (t ? t(`num.${key}`) : key);
+  const suffix = (key: string) => (t ? t(`num.${key}`) : key);
 
   if (abs >= 1e7) return `${currency} ${sign}${(abs / 1e7).toFixed(1)}${suffix('Cr')}`;
   if (abs >= 1e5) return `${currency} ${sign}${(abs / 1e5).toFixed(1)}${suffix('L')}`;
@@ -16,11 +16,11 @@ export function fmtAmount(n, currency = '₹', t) {
   return `${currency} ${sign}${abs.toLocaleString('en-IN')}`;
 }
 
-export function fmtSimple(n, currency = '₹') {
+export function fmtSimple(n: number | string, currency: string = '₹'): string {
   return `${currency} ${Number(n || 0).toLocaleString('en-IN')}`;
 }
 
-export function fmtDate(date, lang = 'en', opts = { day: 'numeric', month: 'short' }) {
+export function fmtDate(date: string | Date, lang: string = 'en', opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }): string {
   if (!date) return '';
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return '';

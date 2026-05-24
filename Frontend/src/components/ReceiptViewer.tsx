@@ -228,7 +228,7 @@ export default function ReceiptViewer({ url, filename = 'receipt', onClose }) {
       document.body.appendChild(a);
       a.click();
       a.remove();
-    } catch (err) {
+    } catch {
       // Final fallback — open in new tab so user can save manually
       window.open(downloadUrl, '_blank', 'noopener,noreferrer');
       toast(t('receipt.downloadFallback'), { icon: 'ℹ️' });
@@ -336,7 +336,6 @@ export default function ReceiptViewer({ url, filename = 'receipt', onClose }) {
             <p>{t('receipt.errLoad')}</p>
           </div>
         )}
-        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
         <img
           ref={imgRef}
           src={url}

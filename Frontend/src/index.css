@@ -1651,6 +1651,370 @@ select.form-input {
 }
 
 /* ==========================================================================
+   Landing / Auth — premium split sign-in (brand panel + auth card)
+   Architectural watermark, live status pill, split layout, floating depth —
+   re-skinned to the warm rose/violet glass identity of this app.
+   ========================================================================== */
+
+/* Full-bleed shell — vertically centers content, clips the watermark.
+   align-items:stretch so children fill the column width (text wraps instead
+   of shrink-wrapping past the viewport). */
+.auth-shell {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: clamp(24px, 5vw, 56px) var(--space-5);
+  /* clip horizontal overflow (watermark) but let the page scroll vertically
+     when a form is taller than the viewport */
+  overflow-x: clip;
+}
+
+/* Architectural background watermark — fixed to the viewport so it stays put
+   behind scrolling forms and never contributes to page overflow. */
+.auth-watermark {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+}
+.aw-word {
+  position: absolute;
+  font-weight: 800;
+  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: -0.05em;
+  line-height: 0.8;
+  font-size: clamp(7rem, 26vw, 23rem);
+  white-space: nowrap;
+}
+.aw-1 {
+  top: 1%;
+  left: -6%;
+  transform: rotate(-10deg);
+  color: var(--text-primary);
+  opacity: 0.035;
+}
+.aw-2 {
+  bottom: 1%;
+  right: -7%;
+  transform: rotate(-10deg);
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  opacity: 0.07;
+}
+[data-theme="light"] .aw-1 { opacity: 0.05; }
+[data-theme="light"] .aw-2 { opacity: 0.08; }
+
+/* Theme / language toggles, pinned top-right above everything */
+.auth-toggles {
+  position: absolute;
+  top: clamp(16px, 3vw, 28px);
+  right: clamp(16px, 3vw, 28px);
+  display: flex;
+  gap: var(--space-2);
+  z-index: 20;
+}
+
+/* Hero — stacked on mobile, split on desktop */
+.auth-hero {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: center;
+}
+
+/* Plain block so block children (headline, stats) fill the width and wrap;
+   inline / auto-margin children stay centred via text-align / margin. */
+.auth-brand {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Emblem — glowing glass badge holding the venue icon */
+.landing-emblem {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  margin: 0 auto var(--space-5);
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+}
+.landing-emblem-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  z-index: 1;
+}
+.landing-emblem-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: var(--gradient-primary);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.65;
+}
+.landing-emblem-glow {
+  position: absolute;
+  inset: -30%;
+  border-radius: var(--radius-full);
+  background: radial-gradient(circle, var(--primary-glow) 0%, transparent 68%);
+  filter: blur(12px);
+  z-index: 0;
+  animation: emblemPulse 4s var(--ease-in-out) infinite;
+}
+.landing-emblem-icon {
+  position: relative;
+  z-index: 2;
+  font-size: 3rem;
+  line-height: 1;
+  animation: bob 4s ease-in-out infinite;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.25));
+}
+@keyframes emblemPulse {
+  0%, 100% { opacity: 0.5;  transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.08); }
+}
+
+/* Floating accent glyphs drifting around the emblem */
+.landing-spark {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  animation: sparkFloat 5s ease-in-out infinite;
+}
+.landing-spark-1 { top: -4px;   right: -2px;  font-size: 1rem;    animation-delay: 0s; }
+.landing-spark-2 { bottom: -2px; left: -10px; font-size: 0.85rem; animation-delay: 1.3s; }
+.landing-spark-3 { top: 14px;   left: -18px;  font-size: 0.78rem; animation-delay: 2.6s; }
+@keyframes sparkFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg);     opacity: 0.45; }
+  50%      { transform: translateY(-7px) rotate(10deg); opacity: 1; }
+}
+
+/* Status pill with live ping dot */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 15px;
+  margin-bottom: var(--space-5);
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-xs);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.status-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+}
+.status-dot::before,
+.status-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: var(--primary);
+}
+.status-dot::before { animation: ping 1.9s var(--ease-out) infinite; }
+@keyframes ping {
+  0%        { transform: scale(1);   opacity: 0.7; }
+  75%, 100% { transform: scale(2.6); opacity: 0; }
+}
+
+/* Headline */
+.auth-headline {
+  width: 100%;
+  font-size: clamp(1.8rem, 7vw, 3rem);
+  font-weight: 800;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.05;
+  margin-bottom: var(--space-4);
+  text-wrap: balance;
+}
+.auth-headline .grad {
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.auth-tagline {
+  color: var(--text-secondary);
+  font-size: 1.02rem;
+  line-height: 1.6;
+  margin: 0 auto var(--space-6);
+  max-width: 40ch;
+  text-wrap: balance;
+}
+
+/* Trust stats row */
+.auth-stats {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+.auth-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.auth-stat-ico { font-size: 0.98rem; line-height: 1; }
+
+/* Auth card — right column on desktop; also wraps every auth form */
+.auth-panel {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 448px;
+  margin: var(--space-8) auto 0;
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-8) var(--space-6);
+  box-shadow: var(--shadow-xl), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  isolation: isolate;
+}
+.auth-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--gradient-soft);
+  z-index: -1;
+  pointer-events: none;
+}
+/* Standalone form panels are centered with no top offset */
+.auth-panel-form { margin-top: 0; }
+
+.auth-panel-head { margin-bottom: var(--space-5); text-align: center; }
+.auth-panel-head h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  margin-bottom: var(--space-1);
+}
+.auth-panel-head p {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.landing-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+/* Give the secondary/ghost choices real affordance against the glass panel */
+.auth-panel .btn-secondary {
+  background: var(--bg-surface-2);
+  border-color: var(--border-light);
+  box-shadow: var(--shadow-xs);
+}
+.auth-panel .btn-secondary:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-focus);
+}
+.auth-panel .btn-ghost {
+  background: transparent;
+  border-color: var(--border-light);
+  color: var(--text-primary);
+}
+.auth-panel .btn-ghost:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-focus);
+}
+.landing-hint {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.6;
+  margin-top: var(--space-5);
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* ---- Tablet polish (≥ 720px) ---- */
+@media (min-width: 720px) {
+  .landing-emblem { width: 116px; height: 116px; }
+  .landing-emblem-icon { font-size: 3.4rem; }
+  .auth-tagline { font-size: 1.08rem; }
+}
+
+/* ---- Desktop split (≥ 992px) ---- */
+@media (min-width: 992px) {
+  .auth-hero {
+    max-width: 1080px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(40px, 6vw, 88px);
+    text-align: left;
+  }
+  .auth-brand { flex: 1 1 0; min-width: 0; }
+  .landing-emblem { margin-left: 0; margin-right: 0; }
+  .auth-stats { justify-content: flex-start; }
+  .auth-headline { font-size: clamp(2.8rem, 4vw, 3.6rem); }
+  .auth-tagline { max-width: 46ch; margin-left: 0; }
+  /* Hero's card sits in the horizontal split — 420px is its WIDTH here. */
+  .auth-hero .auth-panel {
+    margin: 0;
+    flex: 0 0 420px;
+    max-width: 420px;
+    padding: var(--space-10) var(--space-8);
+  }
+  /* Standalone form panels keep natural (content) height and scroll the page;
+     a touch wider + roomier padding for a polished desktop form. */
+  .auth-panel-form {
+    max-width: 480px;
+    padding: var(--space-10) var(--space-8);
+  }
+}
+@media (min-width: 1200px) {
+  .auth-headline { font-size: 3.8rem; }
+}
+
+/* ==========================================================================
    RESPONSIVE BREAKPOINTS
    Mobile-first: everything above is base. Below scales up gracefully.
    ========================================================================== */

@@ -17,7 +17,7 @@ export default function Dashboard() {
   const { t, tCat, lang } = useLang();
   const [selectedExpense, setSelectedExpense] = useState(null);
 
-  useEffect(() => { refreshSummary(); }, []);
+  useEffect(() => { refreshSummary(); }, [refreshSummary]);
 
   if (loading && !summary) {
     return (

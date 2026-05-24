@@ -31,7 +31,7 @@ export default function Settings() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateWedding({ ...form, totalBudget: parseFloat(form.totalBudget) || 0, categories });
+      await updateWedding({ ...form, totalBudget: Number(form.totalBudget) || 0, categories });
       await refreshWedding();
       toast.success(t('settings.savedOk'));
       setEditing(false);

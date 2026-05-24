@@ -1,11 +1,22 @@
-import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef, type SyntheticEvent } from 'react';
+import { useNavigate, type NavigateFunction } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useWedding } from '../context/WeddingContext';
 import { useLang } from '../context/LanguageContext';
 import { createWedding, joinWedding, loginUser, googleLogin, selectWedding, forgotPassword } from '../api';
 import ThemeToggle from '../components/ThemeToggle';
 import LanguageToggle from '../components/LanguageToggle';
+import type { Member, Wedding, AuthResult, WeddingOption } from '../types';
+
+// Which auth surface is showing (null = the landing hero).
+type Mode = 'create' | 'join' | 'login' | 'select-wedding' | 'forgot';
+// Persists an authenticated member + wedding + token into context/localStorage.
+type LoginFn = (member: Member, wedding: Wedding, token: string) => void;
+// Receives a verified Google ID-token credential string.
+type CredentialHandler = (credential: string) => void;
+// Receives a successful auth payload (single- or multi-wedding).
+type AuthSuccessHandler = (data: AuthResult) => void;
+type GoogleButtonText = 'continue_with' | 'signup_with' | 'signin_with';
 
 // Reusable Google Identity Services button. Renders Google's official button and
 // forwards the verified credential to onCredential. Only one is mounted at a time
@@ -14,41 +25,48 @@ import LanguageToggle from '../components/LanguageToggle';
 // The GSI script in index.html is `async defer`, so window.google may not exist
 // yet when this mounts. We poll until it is ready (with cleanup + timeout) instead
 // of giving up on the first try — otherwise the button silently never appears.
-function GoogleAuthButton({ onCredential, text = 'continue_with' }) {
+function GoogleAuthButton({ onCredential, text = 'continue_with' }: { onCredential: CredentialHandler; text?: GoogleButtonText }) {
   const { t } = useLang();
-  const containerRef = useRef(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  // Latest-ref pattern: keep the freshest onCredential without re-subscribing GSI.
+  // Updated in an effect (not during render) so it doesn't mutate a ref mid-render.
   const cbRef = useRef(onCredential);
-  cbRef.current = onCredential;
-  const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'unavailable'
+  useEffect(() => { cbRef.current = onCredential; }, [onCredential]);
+  // Derive the initial state from the (constant) env var instead of setting it in an effect.
+  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>(
+    () => (import.meta.env.VITE_GOOGLE_CLIENT_ID ? 'loading' : 'unavailable')
+  );
 
   useEffect(() => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId) { setStatus('unavailable'); return; }
+    if (!clientId) return;
 
     let cancelled = false;
-    let timer;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let attempts = 0;
     const MAX_ATTEMPTS = 60; // ~6s at 100ms intervals
 
     const render = () => {
       if (cancelled || !containerRef.current) return;
-      const gsi = window.google?.accounts?.id;
+      const gsi = (window as any).google?.accounts?.id;
       if (gsi) {
         gsi.initialize({
           client_id: clientId,
-          callback: (response) => cbRef.current(response.credential),
+          callback: (response: any) => cbRef.current(response.credential),
         });
-        containerRef.current.innerHTML = '';
-        const width = Math.min(containerRef.current.offsetWidth || 320, 400);
-        gsi.renderButton(containerRef.current, {
-          type: 'standard',
-          theme: 'outline',
-          size: 'large',
-          shape: 'pill',
-          text,
-          logo_alignment: 'center',
-          width,
-        });
+        if (containerRef.current) {
+          containerRef.current.innerHTML = '';
+          const width = Math.min(containerRef.current.offsetWidth || 320, 400);
+          gsi.renderButton(containerRef.current, {
+            type: 'standard',
+            theme: 'outline',
+            size: 'large',
+            shape: 'pill',
+            text,
+            logo_alignment: 'center',
+            width,
+          });
+        }
         setStatus('ready');
         return;
       }
@@ -90,14 +108,14 @@ function OrDivider() {
 }
 
 export default function LandingPage() {
-  const [mode, setMode] = useState(null); // null | 'create' | 'join' | 'login' | 'select-wedding' | 'forgot'
+  const [mode, setMode] = useState<Mode | null>(null);
   const { login } = useWedding();
   const { t, tServer } = useLang();
   const navigate = useNavigate();
 
-  const [weddingList, setWeddingList] = useState(null);
+  const [weddingList, setWeddingList] = useState<WeddingOption[] | null>(null);
 
-  const handleLoginSuccess = (data) => {
+  const handleLoginSuccess = (data: AuthResult) => {
     if (data.multipleWeddings) {
       setWeddingList(data.weddings);
       setMode('select-wedding');
@@ -108,7 +126,7 @@ export default function LandingPage() {
     }
   };
 
-  const handleSelectWedding = async (memberId) => {
+  const handleSelectWedding = async (memberId: string) => {
     try {
       const res = await selectWedding({ memberId });
       const { wedding, member, token } = res.data.data;
@@ -121,36 +139,39 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="container" style={{
-      minHeight: '100vh',
-      minHeight: '100dvh',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      paddingTop: 32,
-      paddingBottom: 32,
-      position: 'relative',
-    }}>
-      <div style={{ position: 'absolute', top: 20, right: 20, display: 'flex', gap: 8, zIndex: 10 }}>
+    <div className="auth-shell">
+      {/* Architectural background watermark — decorative, skipped by screen readers */}
+      <div className="auth-watermark" aria-hidden="true">
+        <span className="aw-word aw-1">WEDDING</span>
+        <span className="aw-word aw-2">EXPENSE</span>
+      </div>
+
+      <div className="auth-toggles">
         <LanguageToggle />
         <ThemeToggle />
       </div>
+
       {!mode && <HeroSection onSelect={setMode} onGoogleSuccess={handleLoginSuccess} />}
-      {mode === 'create' && <CreateForm onBack={() => setMode(null)} login={login} navigate={navigate} />}
-      {mode === 'join' && <JoinForm onBack={() => setMode(null)} login={login} navigate={navigate} onAuthSuccess={handleLoginSuccess} onSwitchToLogin={() => setMode('login')} />}
-      {mode === 'login' && <LoginForm onBack={() => setMode(null)} onSuccess={handleLoginSuccess} onForgot={() => setMode('forgot')} />}
-      {mode === 'forgot' && <ForgotPasswordForm onBack={() => setMode('login')} />}
-      {mode === 'select-wedding' && <SelectWeddingForm weddings={weddingList} onSelect={handleSelectWedding} onBack={() => setMode('login')} />}
+
+      {mode && (
+        <div className="auth-panel auth-panel-form animate-scale">
+          {mode === 'create' && <CreateForm onBack={() => setMode(null)} login={login} navigate={navigate} />}
+          {mode === 'join' && <JoinForm onBack={() => setMode(null)} login={login} navigate={navigate} onAuthSuccess={handleLoginSuccess} onSwitchToLogin={() => setMode('login')} />}
+          {mode === 'login' && <LoginForm onBack={() => setMode(null)} onSuccess={handleLoginSuccess} onForgot={() => setMode('forgot')} />}
+          {mode === 'forgot' && <ForgotPasswordForm onBack={() => setMode('login')} />}
+          {mode === 'select-wedding' && <SelectWeddingForm weddings={weddingList} onSelect={handleSelectWedding} onBack={() => setMode('login')} />}
+        </div>
+      )}
     </div>
   );
 }
 
-function HeroSection({ onSelect, onGoogleSuccess }) {
+function HeroSection({ onSelect, onGoogleSuccess }: { onSelect: (mode: Mode) => void; onGoogleSuccess: AuthSuccessHandler }) {
   const { t, tServer } = useLang();
 
   // Returning members: one tap to sign in. New users (no account yet) get a
   // friendly nudge to create a wedding or join with a code.
-  const handleHeroGoogle = async (credential) => {
+  const handleHeroGoogle = async (credential: string) => {
     try {
       const res = await googleLogin({ credential });
       onGoogleSuccess(res.data.data);
@@ -160,57 +181,68 @@ function HeroSection({ onSelect, onGoogleSuccess }) {
   };
 
   return (
-    <div className="animate-in" style={{ textAlign: 'center', maxWidth: 460, margin: '0 auto', width: '100%' }}>
-      <div style={{
-        fontSize: 'clamp(3.4rem, 10vw, 4.4rem)',
-        marginBottom: 'var(--space-4)',
-        animation: 'bob 4s ease-in-out infinite',
-        display: 'inline-block',
-      }}>💒</div>
-      <h1 className="h1" style={{ marginBottom: 'var(--space-3)' }}>
-        {t('landing.title1')}<br />
-        <span style={{
-          background: 'var(--gradient-primary)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text',
-        }}>
-          {t('landing.title2')}
-        </span>
-      </h1>
-      <p style={{
-        color: 'var(--text-secondary)',
-        fontSize: '1rem',
-        marginBottom: 'var(--space-10)',
-        lineHeight: 1.6,
-      }}>
-        {t('landing.subtitle1')}<br />{t('landing.subtitle2')}
-      </p>
-      <div className="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <button className="btn btn-primary btn-full btn-lg" onClick={() => onSelect('create')} id="btn-create-wedding">
-          {t('landing.createBtn')}
-        </button>
-        <button className="btn btn-secondary btn-full btn-lg" onClick={() => onSelect('join')} id="btn-join-wedding">
-          {t('landing.joinBtn')}
-        </button>
-        <button className="btn btn-ghost btn-full btn-lg" onClick={() => onSelect('login')} id="btn-login">
-          {t('landing.loginBtn')}
-        </button>
+    <div className="auth-hero animate-in">
+      {/* LEFT — brand / showcase panel */}
+      <div className="auth-brand">
+        <div className="landing-emblem">
+          <span className="landing-emblem-glow" aria-hidden="true" />
+          <span className="landing-emblem-ring" aria-hidden="true" />
+          <span className="landing-emblem-icon" role="img" aria-label="Wedding venue">💒</span>
+          <span className="landing-spark landing-spark-1" aria-hidden="true">✨</span>
+          <span className="landing-spark landing-spark-2" aria-hidden="true">💍</span>
+          <span className="landing-spark landing-spark-3" aria-hidden="true">🌸</span>
+        </div>
+
+        <div className="status-pill">
+          <span className="status-dot" aria-hidden="true" />
+          {t('landing.eyebrow')}
+        </div>
+
+        <h1 className="auth-headline">
+          {t('landing.title1')} <span className="grad">{t('landing.title2')}</span>
+        </h1>
+
+        <p className="auth-tagline">
+          {t('landing.subtitle1')} {t('landing.subtitle2')}
+        </p>
+
+        {/* Trust stats — quick reassurance for non-tech family members */}
+        <div className="auth-stats">
+          <span className="auth-stat"><span className="auth-stat-ico" aria-hidden="true">👨‍👩‍👧‍👦</span>{t('landing.trustFamily')}</span>
+          <span className="auth-stat"><span className="auth-stat-ico" aria-hidden="true">🪙</span>{t('landing.trustRupee')}</span>
+          <span className="auth-stat"><span className="auth-stat-ico" aria-hidden="true">🔒</span>{t('landing.trustSecure')}</span>
+        </div>
       </div>
 
-      <div style={{ maxWidth: 360, margin: '0 auto' }}>
+      {/* RIGHT — auth card. Buttons + Google share one width so nothing looks loose */}
+      <div className="auth-panel">
+        <div className="auth-panel-head">
+          <h2>{t('landing.panelTitle')}</h2>
+          <p>{t('landing.panelSubtitle')}</p>
+        </div>
+
+        <div className="stagger landing-actions">
+          <button className="btn btn-primary btn-full btn-lg" onClick={() => onSelect('create')} id="btn-create-wedding">
+            {t('landing.createBtn')}
+          </button>
+          <button className="btn btn-secondary btn-full btn-lg" onClick={() => onSelect('join')} id="btn-join-wedding">
+            {t('landing.joinBtn')}
+          </button>
+          <button className="btn btn-ghost btn-full btn-lg" onClick={() => onSelect('login')} id="btn-login">
+            {t('landing.loginBtn')}
+          </button>
+        </div>
+
         <OrDivider />
         <GoogleAuthButton text="continue_with" onCredential={handleHeroGoogle} />
-      </div>
 
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 'var(--space-6)', lineHeight: 1.6 }}>
-        {t('landing.helperHint')}
-      </p>
+        <p className="landing-hint">{t('landing.helperHint')}</p>
+      </div>
     </div>
   );
 }
 
-function CreateForm({ onBack, login, navigate }) {
+function CreateForm({ onBack, login, navigate }: { onBack: () => void; login: LoginFn; navigate: NavigateFunction }) {
   const { t, tServer } = useLang();
   const [form, setForm] = useState({
     weddingName: '', partner1: '', partner2: '', weddingDate: '', totalBudget: '',
@@ -219,7 +251,7 @@ function CreateForm({ onBack, login, navigate }) {
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const set = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
 
   // Wedding + admin-name fields are required for BOTH local and Google signup.
   const validateWeddingFields = () => {
@@ -230,14 +262,14 @@ function CreateForm({ onBack, login, navigate }) {
     return true;
   };
 
-  const finishCreate = (res) => {
+  const finishCreate = (res: { data: { data: AuthResult } }) => {
     const { wedding, member, token } = res.data.data;
     login(member, wedding, token);
     toast.success(t('create.successCode', { code: wedding.joinCode }));
     navigate('/dashboard');
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     if (!validateWeddingFields()) return;
     if (!form.email) return toast.error(t('create.errEmail'));
@@ -257,7 +289,7 @@ function CreateForm({ onBack, login, navigate }) {
 
   // Create the wedding using a Google account instead of email + password.
   // Wedding details still come from the form; identity comes from Google.
-  const handleGoogleSignup = async (credential) => {
+  const handleGoogleSignup = async (credential: string) => {
     if (!validateWeddingFields()) return;
     setLoading(true);
     try {
@@ -362,14 +394,14 @@ function CreateForm({ onBack, login, navigate }) {
   );
 }
 
-function LoginForm({ onBack, onSuccess, onForgot }) {
+function LoginForm({ onBack, onSuccess, onForgot }: { onBack: () => void; onSuccess: AuthSuccessHandler; onForgot: () => void }) {
   const { t, tServer } = useLang();
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const set = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     if (!form.email || !form.password) return toast.error(t('login.errMissing'));
     setLoading(true);
@@ -381,7 +413,7 @@ function LoginForm({ onBack, onSuccess, onForgot }) {
     } finally { setLoading(false); }
   };
 
-  const handleGoogleLogin = async (credential) => {
+  const handleGoogleLogin = async (credential: string) => {
     try {
       const res = await googleLogin({ credential });
       onSuccess(res.data.data);
@@ -429,13 +461,13 @@ function LoginForm({ onBack, onSuccess, onForgot }) {
   );
 }
 
-function ForgotPasswordForm({ onBack }) {
+function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
   const { t, tServer } = useLang();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     if (!email.trim()) return toast.error(t('forgot.errEmail'));
     setLoading(true);
@@ -481,7 +513,7 @@ function ForgotPasswordForm({ onBack }) {
   );
 }
 
-function SelectWeddingForm({ weddings, onSelect, onBack }) {
+function SelectWeddingForm({ weddings, onSelect, onBack }: { weddings: WeddingOption[] | null; onSelect: (memberId: string) => void; onBack: () => void }) {
   const { t } = useLang();
   return (
     <div className="animate-in" style={{ width: '100%', maxWidth: 480, margin: '0 auto' }}>
@@ -524,15 +556,15 @@ function SelectWeddingForm({ weddings, onSelect, onBack }) {
   );
 }
 
-function JoinForm({ onBack, login, navigate, onAuthSuccess, onSwitchToLogin }) {
+function JoinForm({ onBack, login, navigate, onAuthSuccess, onSwitchToLogin }: { onBack: () => void; login: LoginFn; navigate: NavigateFunction; onAuthSuccess: AuthSuccessHandler; onSwitchToLogin: () => void }) {
   const { t, tServer } = useLang();
   const [form, setForm] = useState({ joinCode: '', name: '', relation: '' });
   const [loading, setLoading] = useState(false);
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const set = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
 
   // A credentialed account (admin / has a password or Google) can't re-enter by
   // name — the backend returns 409. Guide them to Login instead of just erroring.
-  const handleJoinError = (err, fallbackKey) => {
+  const handleJoinError = (err: any, fallbackKey: string) => {
     const msg = tServer(err.response?.data?.message) || t(fallbackKey);
     toast.error(msg);
     if (err.response?.status === 409 && onSwitchToLogin) {
@@ -540,7 +572,7 @@ function JoinForm({ onBack, login, navigate, onAuthSuccess, onSwitchToLogin }) {
     }
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     if (!form.joinCode || !form.name) return toast.error(t('join.errMissing'));
     setLoading(true);
@@ -558,7 +590,7 @@ function JoinForm({ onBack, login, navigate, onAuthSuccess, onSwitchToLogin }) {
   // Join the wedding using a Google account. The join code is still required;
   // the member's name/email come from Google. Existing users with this Google
   // email are logged in (and may be routed to the multi-wedding selector).
-  const handleGoogleJoin = async (credential) => {
+  const handleGoogleJoin = async (credential: string) => {
     if (!form.joinCode) return toast.error(t('join.errCodeNeeded'));
     setLoading(true);
     try {

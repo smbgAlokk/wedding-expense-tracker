@@ -31,6 +31,12 @@ export const translations = {
     'landing.joinBtn': '🎉 Join with Code',
     'landing.loginBtn': '🔑 Login (Returning User)',
     'landing.helperHint': 'Family members join with code • Admins login with email',
+    'landing.eyebrow': 'For Indian Weddings',
+    'landing.trustFamily': 'Whole family',
+    'landing.trustRupee': 'Every rupee',
+    'landing.trustSecure': 'Safe & private',
+    'landing.panelTitle': 'Get started',
+    'landing.panelSubtitle': 'Choose how you’d like to continue',
 
     // Create
     'create.header': 'Create Wedding',
@@ -228,6 +234,9 @@ export const translations = {
     'my.deleted': 'Expense deleted',
     'my.errLoad': 'Failed to load expenses',
     'my.errDelete': 'Failed to delete',
+    'my.emptyFiltered': 'No expenses match your search',
+    'my.clearFilters': 'Clear filters',
+    'my.showingFiltered': 'Showing {count} of {total}',
 
     // All Expenses
     'all.header': 'All Expenses',
@@ -240,6 +249,16 @@ export const translations = {
     'all.deleted': 'Deleted',
     'all.errLoad': 'Failed to load expenses',
     'all.errDelete': 'Cannot delete',
+    'all.totalAmountLabel': 'Total on this page',
+    'all.expenseCount': '{count} expenses',
+    'all.expenseCountOne': '1 expense',
+    'all.colSno': '#',
+    'all.colCategory': 'Category',
+    'all.colDescription': 'Description',
+    'all.colAddedBy': 'Added By',
+    'all.colDate': 'Date',
+    'all.colAmount': 'Amount',
+    'all.colReceipt': 'Receipt',
 
     // Members
     'members.header': 'Family Members',
@@ -359,6 +378,12 @@ export const translations = {
     'landing.joinBtn': '🎉 कोड से जुड़ें',
     'landing.loginBtn': '🔑 लॉगिन (पुराने यूज़र)',
     'landing.helperHint': 'परिवार वाले कोड से जुड़ें • एडमिन ईमेल से लॉगिन करें',
+    'landing.eyebrow': 'भारतीय शादियों के लिए',
+    'landing.trustFamily': 'पूरा परिवार',
+    'landing.trustRupee': 'हर रुपया',
+    'landing.trustSecure': 'सुरक्षित',
+    'landing.panelTitle': 'शुरू करें',
+    'landing.panelSubtitle': 'चुनिए आप कैसे आगे बढ़ना चाहते हैं',
 
     // Create
     'create.header': 'नई शादी बनाएँ',
@@ -556,6 +581,9 @@ export const translations = {
     'my.deleted': 'खर्च हटा दिया',
     'my.errLoad': 'खर्च लोड नहीं हो सके',
     'my.errDelete': 'हटाने में दिक्कत',
+    'my.emptyFiltered': 'आपकी खोज से कोई खर्च मेल नहीं खाता',
+    'my.clearFilters': 'फ़िल्टर हटाएँ',
+    'my.showingFiltered': '{total} में से {count} दिख रहे',
 
     // All Expenses
     'all.header': 'सारे खर्च',
@@ -568,6 +596,16 @@ export const translations = {
     'all.deleted': 'हट गया',
     'all.errLoad': 'खर्च लोड नहीं हो सके',
     'all.errDelete': 'हटाया नहीं जा सका',
+    'all.totalAmountLabel': 'इस पेज पर कुल',
+    'all.expenseCount': '{count} खर्च',
+    'all.expenseCountOne': '1 खर्च',
+    'all.colSno': '#',
+    'all.colCategory': 'कैटेगरी',
+    'all.colDescription': 'विवरण',
+    'all.colAddedBy': 'किसने जोड़ा',
+    'all.colDate': 'तारीख',
+    'all.colAmount': 'रकम',
+    'all.colReceipt': 'रसीद',
 
     // Members
     'members.header': 'परिवार के सदस्य',
@@ -728,7 +766,6 @@ const SERVER_EXACT_HI = {
   'This reset link is invalid or has expired. Please request a new one.': 'यह रीसेट लिंक गलत है या इसकी समय-सीमा खत्म हो गई। नया लिंक माँगें।',
   'Your password has been reset. You can now log in.': 'आपका पासवर्ड रीसेट हो गया। अब आप लॉगिन कर सकते हैं।',
   'Invalid request. Please provide a token and a new password.': 'गलत अनुरोध। टोकन और नया पासवर्ड दोनों दें।',
-  'Password must be at least 6 characters': 'पासवर्ड कम से कम 6 अक्षरों का होना चाहिए',
   'Wedding details updated': 'शादी की जानकारी अपडेट हो गई',
   'Expense updated': 'खर्च अपडेट हो गया',
   'Expense deleted': 'खर्च हटा दिया',
@@ -740,7 +777,7 @@ const SERVER_EXACT_HI = {
   'Receipt storage is not configured. Expense saved without receipt.': 'रसीद स्टोरेज सेट नहीं है। खर्च बिना रसीद के सेव हो गया।',
 };
 
-const SERVER_PATTERNS_HI = [
+const SERVER_PATTERNS_HI: Array<[RegExp, (m: RegExpMatchArray) => string]> = [
   [/^Welcome back, (.+)!$/, (m) => `वापस स्वागत है, ${m[1]}!`],
   [/^Welcome, (.+)! You've joined (.+)\.$/, (m) => `स्वागत है, ${m[1]}! आप ${m[2]} में जुड़ गए हैं।`],
   [/^"(.+)" is not a valid category. Please choose from the available categories\.$/, (m) => `"${m[1]}" मान्य कैटेगरी नहीं है। उपलब्ध कैटेगरी में से चुनें।`],

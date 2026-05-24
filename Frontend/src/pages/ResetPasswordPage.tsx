@@ -33,7 +33,7 @@ export default function ResetPasswordPage() {
 
   const wrapper = (children) => (
     <div className="container" style={{
-      minHeight: '100vh', minHeight: '100dvh', display: 'flex', flexDirection: 'column',
+      minHeight: '100dvh', display: 'flex', flexDirection: 'column',
       justifyContent: 'center', paddingTop: 32, paddingBottom: 32, position: 'relative',
     }}>
       <div style={{ position: 'absolute', top: 20, right: 20, display: 'flex', gap: 8, zIndex: 10 }}>
