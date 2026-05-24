@@ -14,7 +14,7 @@ export default function Members() {
   const { members, isAdmin, refreshMembers, wedding } = useWedding();
   const { t, tServer, lang } = useLang();
 
-  useEffect(() => { refreshMembers(); }, []);
+  useEffect(() => { refreshMembers(); }, [refreshMembers]);
 
   const handleRemove = async (id, name) => {
     if (!window.confirm(t('members.confirmRemove', { name }))) return;

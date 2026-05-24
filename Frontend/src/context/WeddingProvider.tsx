@@ -1,35 +1,35 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { getCurrentWedding, getExpenseSummary, getWeddingMembers } from '../api';
+import type { Wedding, Member, ExpenseSummary } from '../types';
+import { WeddingContext, type WeddingContextType } from './WeddingContext';
 
-const WeddingContext = createContext(null);
-
-// Throttle background (tab-focus) refreshes to avoid hammering the API on rapid
-// tab toggles. 15s is short enough that members see admin's category changes
-// quickly when they return to the tab, long enough to prevent abuse.
 const VISIBILITY_REFRESH_THROTTLE_MS = 15_000;
 
-export function WeddingProvider({ children }) {
-  const [member, setMember] = useState(() => {
+interface WeddingProviderProps {
+  children: ReactNode;
+}
+
+export function WeddingProvider({ children }: WeddingProviderProps) {
+  const [member, setMember] = useState<Member | null>(() => {
     try {
-      return JSON.parse(localStorage.getItem('wedding_member'));
+      return JSON.parse(localStorage.getItem('wedding_member') || 'null');
     } catch { return null; }
   });
 
-  const [wedding, setWedding] = useState(() => {
+  const [wedding, setWedding] = useState<Wedding | null>(() => {
     try {
-      return JSON.parse(localStorage.getItem('wedding_data'));
+      return JSON.parse(localStorage.getItem('wedding_data') || 'null');
     } catch { return null; }
   });
 
-  const [summary, setSummary] = useState(null);
-  const [members, setMembers] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [summary, setSummary] = useState<ExpenseSummary | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
 
   const isAuthenticated = !!localStorage.getItem('wedding_token') && !!member;
   const isAdmin = member?.role === 'admin';
 
-  // Login handler (after create/join)
-  const login = useCallback((memberData, weddingData, token) => {
+  const login = useCallback((memberData: Member, weddingData: Wedding, token: string) => {
     localStorage.setItem('wedding_token', token);
     localStorage.setItem('wedding_member', JSON.stringify(memberData));
     localStorage.setItem('wedding_data', JSON.stringify(weddingData));
@@ -37,7 +37,6 @@ export function WeddingProvider({ children }) {
     setWedding(weddingData);
   }, []);
 
-  // Logout handler
   const logout = useCallback(() => {
     localStorage.removeItem('wedding_token');
     localStorage.removeItem('wedding_member');
@@ -48,7 +47,6 @@ export function WeddingProvider({ children }) {
     setMembers([]);
   }, []);
 
-  // Refresh wedding data
   const refreshWedding = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
@@ -60,7 +58,6 @@ export function WeddingProvider({ children }) {
     }
   }, [isAuthenticated]);
 
-  // Refresh expense summary
   const refreshSummary = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
@@ -74,7 +71,6 @@ export function WeddingProvider({ children }) {
     }
   }, [isAuthenticated]);
 
-  // Refresh members
   const refreshMembers = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
@@ -85,21 +81,19 @@ export function WeddingProvider({ children }) {
     }
   }, [isAuthenticated]);
 
-  // Initial sync on auth — pulls the freshest wedding (including any category
-  // changes the admin made), summary, and members. Critical for members whose
-  // localStorage was seeded at join time and may be stale after admin edits.
+  // Bootstrap data on auth. Deferred via setTimeout so the refreshers' setState calls
+  // run outside the effect's synchronous body (avoids cascading-render on mount).
   useEffect(() => {
-    if (isAuthenticated) {
+    if (!isAuthenticated) return;
+    const id = setTimeout(() => {
       refreshWedding();
       refreshSummary();
       refreshMembers();
-    }
+    }, 0);
+    return () => clearTimeout(id);
   }, [isAuthenticated, refreshWedding, refreshSummary, refreshMembers]);
 
-  // Background sync on tab focus — covers the case where admin updates
-  // categories or expenses while a member's tab is in the background.
-  // Throttled so rapid tab toggles don't spam the API.
-  const lastFocusRefreshRef = useRef(0);
+  const lastFocusRefreshRef = useRef<number>(0);
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -116,7 +110,7 @@ export function WeddingProvider({ children }) {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [isAuthenticated, refreshWedding, refreshSummary]);
 
-  const value = {
+  const value: WeddingContextType = {
     member,
     wedding,
     summary,
@@ -136,12 +130,4 @@ export function WeddingProvider({ children }) {
       {children}
     </WeddingContext.Provider>
   );
-}
-
-export function useWedding() {
-  const context = useContext(WeddingContext);
-  if (!context) {
-    throw new Error('useWedding must be used within a WeddingProvider');
-  }
-  return context;
 }

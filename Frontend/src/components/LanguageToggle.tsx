@@ -1,6 +1,11 @@
 import { useLang } from '../context/LanguageContext';
 
-export default function LanguageToggle({ style, className }) {
+interface Props {
+  style?: React.CSSProperties;
+  className?: string;
+}
+
+export default function LanguageToggle({ style, className }: Props) {
   const { lang, toggleLang, t } = useLang();
   const label = t('lang.label');
   const tooltip = t('lang.tooltip');

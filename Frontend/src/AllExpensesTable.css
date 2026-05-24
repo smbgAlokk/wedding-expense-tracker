@@ -1,0 +1,188 @@
+﻿.expense-table-wrap {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+}
+
+/* ---- DESKTOP: real HTML table ---- */
+.expense-table-desktop {
+  display: none; /* shown at >=720px */
+}
+.expense-table-desktop table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.expense-table-desktop thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.expense-table-desktop thead th {
+  position: relative;
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  user-select: none;
+  transition: z-index 0s;
+}
+.expense-table-desktop thead th:hover,
+.expense-table-desktop thead th:focus-within {
+  z-index: 10;
+}
+.expense-table-desktop thead th:first-child {
+  padding-left: var(--space-5);
+  border-radius: var(--radius-lg) 0 0 0;
+}
+.expense-table-desktop thead th:last-child {
+  border-radius: 0 var(--radius-lg) 0 0;
+}
+.expense-table-desktop thead th.col-amount {
+  text-align: right;
+}
+.expense-table-desktop thead th.col-receipt {
+  text-align: center;
+  width: 72px;
+}
+.expense-table-desktop thead th.col-sno {
+  width: 48px;
+  text-align: center;
+}
+
+.expense-table-desktop tbody tr {
+  transition: var(--transition-fast);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.expense-table-desktop tbody tr:nth-child(even) {
+  background: var(--bg-elevated);
+}
+.expense-table-desktop tbody tr:hover {
+  background: var(--bg-card-hover);
+}
+.expense-table-desktop tbody tr:active {
+  background: var(--primary-100);
+}
+.expense-table-desktop tbody tr:last-child td:first-child {
+  border-radius: 0 0 0 var(--radius-lg);
+}
+.expense-table-desktop tbody tr:last-child td:last-child {
+  border-radius: 0 0 var(--radius-lg) 0;
+}
+
+.expense-table-desktop td {
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.88rem;
+  border-bottom: 1px solid var(--divider);
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.expense-table-desktop tbody tr:last-child td {
+  border-bottom: none;
+}
+.expense-table-desktop td:first-child {
+  padding-left: var(--space-5);
+}
+
+.expense-table-desktop td.cell-sno {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
+  width: 48px;
+}
+
+.expense-table-desktop .cell-category {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 500;
+}
+.expense-table-desktop .cell-category-icon {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.expense-table-desktop tbody tr:nth-child(even) .cell-category-icon {
+  background: var(--bg-card);
+}
+
+.expense-table-desktop td.cell-desc {
+  max-width: 240px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.expense-table-desktop td.cell-member {
+  max-width: 180px;
+}
+.expense-table-desktop .cell-member-name {
+  font-weight: 500;
+}
+.expense-table-desktop .cell-member-relation {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.expense-table-desktop td.cell-date {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.expense-table-desktop td.cell-amount {
+  text-align: right;
+  font-weight: 700;
+  font-feature-settings: 'tnum';
+  font-variant-numeric: tabular-nums;
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+.expense-table-desktop td.cell-receipt {
+  text-align: center;
+  width: 72px;
+}
+
+@media (min-width: 720px) {
+  .expense-table-mobile { display: none; }
+  .expense-table-desktop { display: block; }
+}
+
+@media (min-width: 1024px) {
+  .expense-table-desktop td {
+    padding: var(--space-4) var(--space-5);
+  }
+  .expense-table-desktop thead th {
+    padding: var(--space-3) var(--space-5);
+  }
+  .expense-table-desktop td:first-child {
+    padding-left: var(--space-6);
+  }
+  .expense-table-desktop thead th:first-child {
+    padding-left: var(--space-6);
+  }
+}
+.expense-table-wrap {
+  overflow: visible !important;
+}

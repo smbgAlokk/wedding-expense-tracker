@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useLang } from '../context/LanguageContext';
 
-export default function ThemeToggle({ style, className }) {
+interface Props {
+  style?: React.CSSProperties;
+  className?: string;
+}
+
+export default function ThemeToggle({ style, className }: Props) {
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('theme') || 'dark'; } catch { return 'dark'; }
   });

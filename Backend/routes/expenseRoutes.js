@@ -149,20 +149,53 @@ router.post('/', protect, receiptUpload, asyncHandler(async (req, res) => {
  * Get all expenses for the wedding (protected)
  */
 router.get('/', protect, asyncHandler(async (req, res) => {
-  const { page = 1, limit = 50, category, memberId, sortBy = 'createdAt', order = 'desc' } = req.query;
+  const { 
+    page = 1, limit = 50, category, memberId, sortBy = 'createdAt', order = 'desc',
+    searchCategory, searchDesc, searchMember
+  } = req.query;
 
   const query = { weddingId: req.weddingId };
 
+  // Existing exact matches (chips)
   if (category) query.category = category;
   if (memberId) query.memberId = memberId;
 
+  // Header column searches
+  if (searchCategory) {
+    query.category = { $regex: searchCategory, $options: 'i' };
+  }
+  if (searchDesc) {
+    query.description = { $regex: searchDesc, $options: 'i' };
+  }
+  
+  if (searchMember) {
+    // 1. Find members matching the name
+    const members = await Member.find({ 
+      weddingId: req.weddingId, 
+      name: { $regex: searchMember, $options: 'i' } 
+    }).select('_id').lean();
+    
+    const memberIds = members.map(m => m._id);
+    
+    // 2. Add to query (intersecting with memberId if existing)
+    if (query.memberId) {
+      if (!memberIds.some(id => id.toString() === query.memberId.toString())) {
+         query.memberId = null; // Forces empty result if memberId doesn't match search
+      }
+    } else {
+      query.memberId = { $in: memberIds };
+    }
+  }
+
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const sortOrder = order === 'asc' ? 1 : -1;
+  const validSortFields = ['createdAt', 'amount', 'category', 'description'];
+  const actualSortBy = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
 
   const [expenses, total] = await Promise.all([
     Expense.find(query)
       .populate('memberId', 'name relation role')
-      .sort({ [sortBy]: sortOrder })
+      .sort({ [actualSortBy]: sortOrder })
       .skip(skip)
       .limit(parseInt(limit))
       .lean(),
