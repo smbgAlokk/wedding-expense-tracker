@@ -1128,6 +1128,48 @@ select.form-input {
   100% { background-position: -200% 0; }
 }
 
+/* ============================================================
+   App loader — premium gradient ring (replaces list skeletons)
+   ============================================================ */
+.app-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  /* Fill most of the viewport below the header/chips so the ring sits
+     vertically centred in the visible area, not pinned near the top. */
+  min-height: 60vh;
+  padding: var(--space-10) var(--space-5);
+  animation: fadeIn 240ms var(--ease-out);
+}
+.app-loader-ring {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  /* Spinning brand-gradient arc, carved into a ring via a radial mask. */
+  background: conic-gradient(from 0deg,
+    transparent 6%,
+    var(--primary) 52%,
+    var(--primary-light) 80%,
+    transparent 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 5px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 5px));
+  filter: drop-shadow(0 0 6px var(--primary-glow));
+  animation: spin 850ms linear infinite;
+}
+.app-loader-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-loader-ring { animation-duration: 1.8s; }
+  .app-loader-label { animation: none; }
+}
+
 /* Modal backdrop */
 .modal-backdrop {
   position: fixed;

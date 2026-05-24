@@ -23,9 +23,17 @@ const protect = async (req, res, next) => {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Check if member still exists and is active
-    const member = await Member.findById(decoded.id).populate('weddingId');
-    
+    // Check if member still exists and is active.
+    // Runs on EVERY authenticated request, so keep it as cheap as possible:
+    //  • select only the fields downstream code actually reads
+    //  • .lean() — skip Mongoose document hydration (we never .save() req.member)
+    //  • NO .populate('weddingId') — the weddingId ObjectId is already on the
+    //    member; populating fetched the whole Wedding doc (20 categories) on
+    //    every request for nothing. Routes that need the wedding load it themselves.
+    const member = await Member.findById(decoded.id)
+      .select('name role isActive weddingId')
+      .lean();
+
     if (!member) {
       return res.status(401).json({
         success: false,
@@ -41,7 +49,7 @@ const protect = async (req, res, next) => {
     }
 
     req.member = member;
-    req.weddingId = member.weddingId._id || member.weddingId;
+    req.weddingId = member.weddingId;
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {

@@ -247,91 +247,103 @@ router.get('/my', protect, asyncHandler(async (req, res) => {
 router.get('/summary', protect, asyncHandler(async (req, res) => {
   const weddingId = new mongoose.Types.ObjectId(req.weddingId);
 
-  // Total expenses
-  const [totalResult] = await Expense.aggregate([
-    { $match: { weddingId } },
-    { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
-  ]);
-
-  const totalSpent = totalResult?.total || 0;
-  const totalCount = totalResult?.count || 0;
-
-  // Category breakdown
-  const categoryBreakdown = await Expense.aggregate([
-    { $match: { weddingId } },
-    {
-      $group: {
-        _id: '$category',
-        total: { $sum: '$amount' },
-        count: { $sum: 1 }
-      }
-    },
-    { $sort: { total: -1 } }
-  ]);
-
-  // Member breakdown (top contributors)
-  const memberBreakdown = await Expense.aggregate([
-    { $match: { weddingId } },
-    {
-      $group: {
-        _id: '$memberId',
-        total: { $sum: '$amount' },
-        count: { $sum: 1 }
-      }
-    },
-    { $sort: { total: -1 } },
-    {
-      $lookup: {
-        from: 'members',
-        localField: '_id',
-        foreignField: '_id',
-        as: 'member'
-      }
-    },
-    { $unwind: '$member' },
-    {
-      $project: {
-        _id: 1,
-        total: 1,
-        count: 1,
-        name: '$member.name',
-        relation: '$member.relation'
-      }
-    }
-  ]);
-
-  // Recent expenses (last 10)
-  const recentExpenses = await Expense.find({ weddingId: req.weddingId })
-    .populate('memberId', 'name relation')
-    .sort({ createdAt: -1 })
-    .limit(10)
-    .lean();
-
-  // Daily spending trend (last 30 days)
+  // Daily spending trend window (last 30 days)
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const dailyTrend = await Expense.aggregate([
-    {
-      $match: {
-        weddingId,
-        createdAt: { $gte: thirtyDaysAgo }
+  // Every query below is independent — fire them concurrently so the dashboard
+  // pays ONE network round-trip to Atlas instead of six sequential ones.
+  const [
+    totalResultArr,
+    categoryBreakdown,
+    memberBreakdown,
+    recentExpenses,
+    dailyTrend,
+    wedding,
+  ] = await Promise.all([
+    // Total expenses
+    Expense.aggregate([
+      { $match: { weddingId } },
+      { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]),
+
+    // Category breakdown
+    Expense.aggregate([
+      { $match: { weddingId } },
+      {
+        $group: {
+          _id: '$category',
+          total: { $sum: '$amount' },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { total: -1 } }
+    ]),
+
+    // Member breakdown (top contributors)
+    Expense.aggregate([
+      { $match: { weddingId } },
+      {
+        $group: {
+          _id: '$memberId',
+          total: { $sum: '$amount' },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { total: -1 } },
+      {
+        $lookup: {
+          from: 'members',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'member'
+        }
+      },
+      { $unwind: '$member' },
+      {
+        $project: {
+          _id: 1,
+          total: 1,
+          count: 1,
+          name: '$member.name',
+          relation: '$member.relation'
+        }
       }
-    },
-    {
-      $group: {
-        _id: {
-          $dateToString: { format: '%Y-%m-%d', date: '$createdAt' }
-        },
-        total: { $sum: '$amount' },
-        count: { $sum: 1 }
-      }
-    },
-    { $sort: { _id: 1 } }
+    ]),
+
+    // Recent expenses (last 10)
+    Expense.find({ weddingId: req.weddingId })
+      .populate('memberId', 'name relation')
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean(),
+
+    // Daily spending trend (last 30 days)
+    Expense.aggregate([
+      {
+        $match: {
+          weddingId,
+          createdAt: { $gte: thirtyDaysAgo }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' }
+          },
+          total: { $sum: '$amount' },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]),
+
+    // Wedding budget
+    Wedding.findById(req.weddingId),
   ]);
 
-  // Get wedding budget
-  const wedding = await Wedding.findById(req.weddingId);
+  const totalSpent = totalResultArr[0]?.total || 0;
+  const totalCount = totalResultArr[0]?.count || 0;
 
   res.status(200).json({
     success: true,
