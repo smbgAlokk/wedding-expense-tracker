@@ -18,21 +18,59 @@ type CredentialHandler = (credential: string) => void;
 type AuthSuccessHandler = (data: AuthResult) => void;
 type GoogleButtonText = 'continue_with' | 'signup_with' | 'signin_with';
 
-// Reusable Google Identity Services button. Renders Google's official button and
-// forwards the verified credential to onCredential. Only one is mounted at a time
-// (the page shows one form at a time), so the global initialize() call is safe.
+// ─── Google Identity Services — module-level singleton ──────────────────────
 //
-// The GSI script in index.html is `async defer`, so window.google may not exist
-// yet when this mounts. We poll until it is ready (with cleanup + timeout) instead
-// of giving up on the first try — otherwise the button silently never appears.
+// GSI is a global on `window.google.accounts.id`. Every `initialize()` call
+// replaces the callback registered on that singleton, so re-initializing per
+// component mount (a) emits a console warning and (b) is genuinely unsafe — a
+// late popup response could fire the *previous* component's callback.
+//
+// Strategy: initialize exactly once per page load, with a stable callback that
+// dispatches to whichever <GoogleAuthButton/> is currently mounted. Each button
+// just swaps the pointer on mount/unmount. No re-init, no warnings, no leaks.
+let gsiInitPromise: Promise<any> | null = null;
+let activeCredentialHandler: CredentialHandler | null = null;
+
+function loadGsi(clientId: string): Promise<any> {
+  if (gsiInitPromise) return gsiInitPromise;
+  gsiInitPromise = new Promise((resolve, reject) => {
+    const start = Date.now();
+    const MAX_WAIT_MS = 8000; // GSI script is async-defer; give it a generous window
+    const poll = () => {
+      const gsi = (window as any).google?.accounts?.id;
+      if (gsi) {
+        gsi.initialize({
+          client_id: clientId,
+          callback: (response: any) => {
+            // Dispatch to whoever's currently mounted. Silently drop if no one
+            // is — happens if the user closes the popup after navigating away.
+            if (activeCredentialHandler && response?.credential) {
+              activeCredentialHandler(response.credential);
+            }
+          },
+        });
+        resolve(gsi);
+        return;
+      }
+      if (Date.now() - start > MAX_WAIT_MS) {
+        reject(new Error('Google Identity Services failed to load within 8s'));
+        return;
+      }
+      setTimeout(poll, 100);
+    };
+    poll();
+  });
+  // If the initial promise rejects, allow a future mount to retry instead of
+  // permanently disabling Google Sign-In for the session.
+  gsiInitPromise.catch(() => { gsiInitPromise = null; });
+  return gsiInitPromise;
+}
+
+// Reusable Google Identity Services button. Renders Google's official button and
+// forwards the verified credential to onCredential.
 function GoogleAuthButton({ onCredential, text = 'continue_with' }: { onCredential: CredentialHandler; text?: GoogleButtonText }) {
   const { t } = useLang();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  // Latest-ref pattern: keep the freshest onCredential without re-subscribing GSI.
-  // Updated in an effect (not during render) so it doesn't mutate a ref mid-render.
-  const cbRef = useRef(onCredential);
-  useEffect(() => { cbRef.current = onCredential; }, [onCredential]);
-  // Derive the initial state from the (constant) env var instead of setting it in an effect.
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>(
     () => (import.meta.env.VITE_GOOGLE_CLIENT_ID ? 'loading' : 'unavailable')
   );
@@ -41,43 +79,43 @@ function GoogleAuthButton({ onCredential, text = 'continue_with' }: { onCredenti
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     if (!clientId) return;
 
+    // Claim the GSI callback slot while mounted. If another button is already
+    // mounted (transient view switch), the most recently mounted one wins —
+    // which matches the on-screen reality.
+    const previousHandler = activeCredentialHandler;
+    activeCredentialHandler = onCredential;
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let attempts = 0;
-    const MAX_ATTEMPTS = 60; // ~6s at 100ms intervals
 
-    const render = () => {
-      if (cancelled || !containerRef.current) return;
-      const gsi = (window as any).google?.accounts?.id;
-      if (gsi) {
-        gsi.initialize({
-          client_id: clientId,
-          callback: (response: any) => cbRef.current(response.credential),
+    loadGsi(clientId)
+      .then((gsi) => {
+        if (cancelled || !containerRef.current) return;
+        containerRef.current.innerHTML = '';
+        const width = Math.min(containerRef.current.offsetWidth || 320, 400);
+        gsi.renderButton(containerRef.current, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+          shape: 'pill',
+          text,
+          logo_alignment: 'center',
+          width,
         });
-        if (containerRef.current) {
-          containerRef.current.innerHTML = '';
-          const width = Math.min(containerRef.current.offsetWidth || 320, 400);
-          gsi.renderButton(containerRef.current, {
-            type: 'standard',
-            theme: 'outline',
-            size: 'large',
-            shape: 'pill',
-            text,
-            logo_alignment: 'center',
-            width,
-          });
-        }
         setStatus('ready');
-        return;
-      }
-      attempts += 1;
-      if (attempts >= MAX_ATTEMPTS) { setStatus('unavailable'); return; }
-      timer = setTimeout(render, 100);
-    };
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('unavailable');
+      });
 
-    render();
-    return () => { cancelled = true; if (timer) clearTimeout(timer); };
-  }, [text]);
+    return () => {
+      cancelled = true;
+      // Restore whatever handler was registered before us (usually null). Don't
+      // null-out unconditionally — under React StrictMode the effect runs twice
+      // and we'd wipe our own newly-set handler.
+      if (activeCredentialHandler === onCredential) {
+        activeCredentialHandler = previousHandler;
+      }
+    };
+  }, [onCredential, text]);
 
   return (
     <div>
