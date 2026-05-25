@@ -1,10 +1,57 @@
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 
-// const API_BASE = import.meta.env.VITE_API_URL || '/api';
+// Resolve the API base URL defensively.
+//
+// VITE_API_URL is baked into the production bundle at build time. If it's
+// wrong, every request 404s and there's no runtime fallback short of
+// rebuilding. We've now hit this twice (once for a missing /api suffix, once
+// for a missing https:// scheme — axios silently treats schemeless values as
+// paths relative to the page origin), so the code now tolerates the common
+// shapes a human would type and hard-fails on anything unrecoverable.
+//
+// Accepts:   ''                                    → '/api'  (local dev — Vite proxy in vite.config.ts)
+//            'host.example.com'                    → 'https://host.example.com/api'
+//            'host.example.com/api'                → 'https://host.example.com/api'
+//            'https://host.example.com'            → 'https://host.example.com/api'
+//            'https://host.example.com/api'        → 'https://host.example.com/api'
+//            'https://host.example.com/api/' (etc) → 'https://host.example.com/api'
+function resolveApiBase(): string {
+  const raw = import.meta.env.VITE_API_URL;
 
-const RAW = import.meta.env.VITE_API_URL || '/api';
-const API_BASE = RAW.replace(/\/+$/, '').endsWith('/api') ? RAW : `${RAW.replace(/\/+$/, '')}/api`;
+  if (!raw || !raw.trim()) return '/api';
 
+  let url = raw.trim().replace(/\/+$/, '');
+
+  if (!/^https?:\/\//i.test(url)) {
+    url = `https://${url}`;
+  }
+
+  if (!/\/api$/i.test(url)) {
+    url = `${url}/api`;
+  }
+
+  try {
+    // Throws on values like 'https://' or '://foo'. Better to break on boot
+    // than spray 404s across every screen.
+    new URL(url);
+  } catch {
+    throw new Error(
+      `[api] VITE_API_URL is not a valid URL: "${raw}". ` +
+      `Expected e.g. "https://your-backend.up.railway.app" or ` +
+      `"https://your-backend.up.railway.app/api".`
+    );
+  }
+
+  return url;
+}
+
+const API_BASE = resolveApiBase();
+
+if (import.meta.env.PROD) {
+  // One-line audit trail in devtools so a wrong deploy is obvious at a glance.
+  // eslint-disable-next-line no-console
+  console.info('[api] base URL =', API_BASE);
+}
 
 const api = axios.create({
   baseURL: API_BASE,
