@@ -1,4 +1,5 @@
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
+import toast from 'react-hot-toast';
 
 // Resolve the API base URL defensively.
 //
@@ -67,16 +68,45 @@ api.interceptors.request.use((config) => {
   return config;
 }, (error) => Promise.reject(error));
 
-// Handle 401 globally (expired/invalid session)
+// Surface "the backend isn't reachable" as a single user-visible toast instead of
+// a silent console error per failed refresh. Debounced so the WeddingProvider's
+// burst of refreshes (wedding + summary + members on mount/visibility) shows ONE
+// banner, not three.
+let lastNetworkErrorToastAt = 0;
+const NETWORK_ERROR_TOAST_COOLDOWN_MS = 10_000;
+
+function notifyNetworkError() {
+  const now = Date.now();
+  if (now - lastNetworkErrorToastAt < NETWORK_ERROR_TOAST_COOLDOWN_MS) return;
+  lastNetworkErrorToastAt = now;
+  toast.error(
+    "Can't reach the server. Please check your connection or try again in a few minutes.",
+    { id: 'network-error', duration: 6000 }
+  );
+}
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // 401 — expired/invalid session. Clear local auth and bounce to landing.
     if (error.response?.status === 401) {
       localStorage.removeItem('wedding_token');
       localStorage.removeItem('wedding_member');
       localStorage.removeItem('wedding_data');
       window.location.href = '/';
+      return Promise.reject(error);
     }
+
+    // No response object at all = no answer from any server. Three real causes
+    // in production: (a) backend host is down / DNS missing (ERR_NAME_NOT_RESOLVED),
+    // (b) the user is offline, (c) CORS preflight rejection. In all three cases
+    // the user sees a blank screen unless we tell them — which historically has
+    // been the worst UX failure mode of this app. Skip the toast for canceled
+    // requests (e.g. AbortController on route change) since those aren't errors.
+    if (!error.response && error.code !== 'ERR_CANCELED' && error.code !== 'CanceledError') {
+      notifyNetworkError();
+    }
+
     return Promise.reject(error);
   }
 );
