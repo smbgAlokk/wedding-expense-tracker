@@ -8,10 +8,11 @@ import { updateWedding } from '../api';
 import { getMissingDefaults } from '../constants/defaultCategories';
 import LanguageToggle from '../components/LanguageToggle';
 import ThemeToggle from '../components/ThemeToggle';
+import type { Category } from '../types';
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { wedding, member, isAdmin, logout, refreshWedding } = useWedding();
+  const { wedding, member, isAdmin, features, workspaceType, logout, refreshWedding } = useWedding();
   const { t, tCat, tServer, lang } = useLang();
   const [editing, setEditing] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
@@ -40,26 +41,50 @@ export default function Settings() {
     } finally { setSaving(false); }
   };
 
+  // Persist a new categories list to the server with optimistic UI: update local
+  // state immediately, fire the PUT, refresh from server on success, rollback
+  // on failure. Replaces the previous draft+Save two-step where additions only
+  // committed to local state — users would refresh and lose their changes
+  // because the Save Categories button only showed up on length changes and
+  // could be easy to miss.
+  const persistCategories = async (next: Category[], successMsgKey: string, successMsgVars?: Record<string, string | number>) => {
+    const prev = categories;
+    setCategories(next);
+    try {
+      await updateWedding({ categories: next });
+      await refreshWedding();
+      toast.success(t(successMsgKey, successMsgVars));
+    } catch (err: any) {
+      setCategories(prev); // rollback
+      toast.error(tServer(err.response?.data?.message) || t('settings.errSave'));
+    }
+  };
+
   const addCategory = () => {
     if (!newCat.name.trim()) return toast.error(t('settings.errCategoryName'));
     if (categories.find(c => c.name.toLowerCase() === newCat.name.toLowerCase())) return toast.error(t('settings.errCategoryExists'));
-    setCategories([...categories, { name: newCat.name.trim(), icon: newCat.icon || '📦', budgetLimit: 0 }]);
+    const next = [...categories, { name: newCat.name.trim(), icon: newCat.icon || '📦', budgetLimit: 0 }];
     setNewCat({ name: '', icon: '📦' });
+    persistCategories(next, 'settings.categoryAdded', { name: newCat.name.trim() });
   };
 
-  const removeCategory = (name) => {
-    setCategories(categories.filter(c => c.name !== name));
+  const removeCategory = (name: string) => {
+    const next = categories.filter(c => c.name !== name);
+    persistCategories(next, 'settings.categoryRemoved', { name });
   };
 
-  // Compute which canonical defaults are missing from the current list.
-  // Recomputed on every render — cheap (≤20 items) and always reflects state.
-  const missingDefaults = getMissingDefaults(categories);
+  // Compute which canonical defaults are missing from the current list, scoped
+  // to the workspace's vertical. Without passing `workspaceType` this defaulted
+  // to wedding categories — on a Personal workspace that surfaced an "Add 18
+  // suggested wedding categories" button that would inject wedding-specific
+  // entries into the user's personal budget.
+  const missingDefaults = getMissingDefaults(categories, workspaceType);
 
   const addMissingDefaults = () => {
     if (missingDefaults.length === 0) return;
     const newOnes = missingDefaults.map(d => ({ ...d, budgetLimit: 0 }));
-    setCategories([...categories, ...newOnes]);
-    toast.success(t('settings.suggestedCategoriesAdded', { count: newOnes.length }));
+    const next = [...categories, ...newOnes];
+    persistCategories(next, 'settings.suggestedCategoriesAdded', { count: newOnes.length });
   };
 
   const handleLogout = () => {
@@ -89,10 +114,14 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Wedding Info */}
+      {/* Workspace Info — wedding-specific fields (couple names, wedding date)
+          are hidden for single-member verticals (Personal). The budget label
+          shifts from "Total Budget" to "Monthly Budget" for monthly verticals. */}
       <div className="surface-card" style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>{t('settings.weddingDetails')}</h3>
+          <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>
+            {features.multiMember ? t('settings.weddingDetails') : t('settings.budgetDetails')}
+          </h3>
           {isAdmin && !editing && (
             <button className="btn btn-secondary btn-xs" onClick={() => setEditing(true)}>{t('common.edit')}</button>
           )}
@@ -101,26 +130,34 @@ export default function Settings() {
         {editing ? (
           <>
             <div className="form-group">
-              <label className="form-label">{t('settings.weddingName')}</label>
+              <label className="form-label">
+                {features.multiMember ? t('settings.weddingName') : t('settings.budgetName')}
+              </label>
               <input className="form-input" value={form.weddingName} onChange={e => set('weddingName', e.target.value)} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div className="form-group">
-                <label className="form-label">{t('settings.partner1')}</label>
-                <input className="form-input" value={form.partner1} onChange={e => set('partner1', e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">{t('settings.partner2')}</label>
-                <input className="form-input" value={form.partner2} onChange={e => set('partner2', e.target.value)} />
-              </div>
-            </div>
-            <div className="form-group">
-              <label className="form-label">{t('settings.weddingDate')}</label>
-              <input className="form-input" type="date" value={form.weddingDate} onChange={e => set('weddingDate', e.target.value)} />
-            </div>
+            {features.multiMember && (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">{t('settings.partner1')}</label>
+                    <input className="form-input" value={form.partner1} onChange={e => set('partner1', e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">{t('settings.partner2')}</label>
+                    <input className="form-input" value={form.partner2} onChange={e => set('partner2', e.target.value)} />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">{t('settings.weddingDate')}</label>
+                  <input className="form-input" type="date" value={form.weddingDate} onChange={e => set('weddingDate', e.target.value)} />
+                </div>
+              </>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
               <div className="form-group">
-                <label className="form-label">{t('settings.totalBudget')}</label>
+                <label className="form-label">
+                  {features.monthlyBudget ? t('settings.monthlyBudget') : t('settings.totalBudget')}
+                </label>
                 <input className="form-input" type="number" inputMode="decimal" value={form.totalBudget} onChange={e => set('totalBudget', e.target.value)} />
               </div>
               <div className="form-group">
@@ -143,9 +180,17 @@ export default function Settings() {
         ) : (
           <div style={{ fontSize: '0.92rem', lineHeight: 1.9, color: 'var(--text-secondary)' }}>
             <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>{wedding?.weddingName}</p>
-            <p>{t('settings.coupleLabel', { p1: wedding?.coupleNames?.partner1 || '', p2: wedding?.coupleNames?.partner2 || '' })}</p>
-            <p>{t('settings.dateLabel', { date: wedding?.weddingDate ? fmtDate(wedding.weddingDate, lang, { day: 'numeric', month: 'long', year: 'numeric' }) : t('common.notSet') })}</p>
-            <p className="text-tnum">{t('settings.budgetLabel', { currency: wedding?.currency || '₹', amount: (wedding?.totalBudget || 0).toLocaleString('en-IN') })}</p>
+            {features.multiMember && (
+              <>
+                <p>{t('settings.coupleLabel', { p1: wedding?.coupleNames?.partner1 || '', p2: wedding?.coupleNames?.partner2 || '' })}</p>
+                <p>{t('settings.dateLabel', { date: wedding?.weddingDate ? fmtDate(wedding.weddingDate, lang, { day: 'numeric', month: 'long', year: 'numeric' }) : t('common.notSet') })}</p>
+              </>
+            )}
+            <p className="text-tnum">
+              {features.monthlyBudget
+                ? t('settings.monthlyBudgetLabel', { currency: wedding?.currency || '₹', amount: (wedding?.totalBudget || 0).toLocaleString('en-IN') })
+                : t('settings.budgetLabel', { currency: wedding?.currency || '₹', amount: (wedding?.totalBudget || 0).toLocaleString('en-IN') })}
+            </p>
             {member?.email && <p style={{ wordBreak: 'break-all' }}>{t('settings.emailLabel', { email: member.email })}</p>}
           </div>
         )}
@@ -183,39 +228,41 @@ export default function Settings() {
             ))}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input className="form-input" placeholder={t('settings.newCategoryPlaceholder')} value={newCat.name} onChange={e => setNewCat(p => ({ ...p, name: e.target.value }))} style={{ flex: 1, minHeight: 44, fontSize: '0.9rem' }} />
+            <input className="form-input" placeholder={t('settings.newCategoryPlaceholder')} value={newCat.name} onChange={e => setNewCat(p => ({ ...p, name: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCategory(); } }} style={{ flex: 1, minHeight: 44, fontSize: '0.9rem' }} />
             <button className="btn btn-primary btn-sm" onClick={addCategory}>{t('settings.addCategory')}</button>
           </div>
-          {categories.length !== (wedding?.categories || []).length && (
-            <button className="btn btn-primary btn-sm btn-full" onClick={handleSave} disabled={saving} style={{ marginTop: 12 }}>
-              {saving ? t('settings.saving') : t('settings.saveCategories')}
-            </button>
-          )}
+          {/* Categories auto-save on add / remove — no separate Save button needed. */}
         </div>
       )}
 
-      {/* Join Code */}
-      <div className="hero-card sparkle" style={{ textAlign: 'center', marginBottom: 16 }}>
-        <p className="section-title" style={{ marginBottom: 8 }}>{t('settings.joinCode')}</p>
-        <div className="text-tnum" style={{ fontSize: '1.85rem', fontWeight: 800, letterSpacing: '7px', color: 'var(--primary-light)', marginBottom: 12 }}>
-          {wedding?.joinCode}
+      {/* Join Code — only shown for verticals that have one (Wedding, Trip).
+          Personal workspaces never surface a join code. */}
+      {features.joinCode && wedding?.joinCode && (
+        <div className="hero-card sparkle" style={{ textAlign: 'center', marginBottom: 16 }}>
+          <p className="section-title" style={{ marginBottom: 8 }}>{t('settings.joinCode')}</p>
+          <div className="text-tnum" style={{ fontSize: '1.85rem', fontWeight: 800, letterSpacing: '7px', color: 'var(--primary-light)', marginBottom: 12 }}>
+            {wedding.joinCode}
+          </div>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => { navigator.clipboard.writeText(wedding.joinCode); toast.success(t('common.copied')); }}
+          >
+            {t('settings.copy')}
+          </button>
         </div>
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={() => { navigator.clipboard.writeText(wedding?.joinCode); toast.success(t('common.copied')); }}
-        >
-          {t('settings.copy')}
+      )}
+
+      {/* Members shortcut — single-member verticals hide this (no one else exists). */}
+      {features.multiMember && (
+        <button className="btn btn-secondary btn-full" onClick={() => navigate('/members')} style={{ marginBottom: 12 }}>
+          {t('settings.viewMembers')}
         </button>
-      </div>
+      )}
 
-      {/* Members shortcut */}
-      <button className="btn btn-secondary btn-full" onClick={() => navigate('/members')} style={{ marginBottom: 12 }}>
-        {t('settings.viewMembers')}
-      </button>
-
-      {/* Logout */}
+      {/* Logout — copy is generic ("Sign out") for single-member verticals and
+          uses the existing wedding-specific "Leave Wedding" wording otherwise. */}
       <button className="btn btn-danger btn-full" onClick={() => setShowLeaveModal(true)} id="btn-logout" style={{ marginBottom: 40 }}>
-        {t('settings.leave')}
+        {features.multiMember ? t('settings.leave') : t('settings.signOut')}
       </button>
 
       {/* Leave Confirmation Modal */}
@@ -223,9 +270,13 @@ export default function Settings() {
         <div className="modal-backdrop" onClick={() => setShowLeaveModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div style={{ fontSize: '3rem', marginBottom: 12 }}>👋</div>
-            <h2 className="h2" style={{ marginBottom: 8 }}>{t('settings.leaveTitle')}</h2>
+            <h2 className="h2" style={{ marginBottom: 8 }}>
+              {features.multiMember ? t('settings.leaveTitle') : t('settings.signOutTitle')}
+            </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem', marginBottom: 24, lineHeight: 1.55 }}>
-              {t(member?.email ? 'settings.leaveBodyEmail' : 'settings.leaveBodyCode', { wedding: wedding?.weddingName || '' })}
+              {features.multiMember
+                ? t(member?.email ? 'settings.leaveBodyEmail' : 'settings.leaveBodyCode', { wedding: wedding?.weddingName || '' })
+                : t('settings.signOutBody')}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <button className="btn btn-danger btn-full btn-lg" onClick={handleLogout} id="btn-confirm-leave">

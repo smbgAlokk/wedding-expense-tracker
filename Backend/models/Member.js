@@ -50,6 +50,49 @@ const memberSchema = new mongoose.Schema({
     type: Date,
     select: false
   },
+  // Per-account brute-force lockout (Security audit H-2, 2026-05-28).
+  // loginAttempts counts CONSECUTIVE failed sign-ins for this Member doc; reset
+  // to 0 on any successful login. lockedUntil is set 15 min into the future
+  // when loginAttempts reaches 10, after which the counter is reset to 0 (so
+  // the next 10 failures past the unlock window earn the next lockout, no
+  // off-by-one). Both select:false so the hot protect-middleware projection
+  // and every API response stay byte-identical; only /login pulls them in.
+  loginAttempts: {
+    type: Number,
+    default: 0,
+    select: false
+  },
+  lockedUntil: {
+    type: Date,
+    select: false
+  },
+  // Email verification (Security audit H-5, 2026-05-28).
+  //   • emailVerifiedAt — null until the user clicks the verification link sent
+  //     at signup (or proves email control via a successful password reset).
+  //     Members created via Google sign-in are auto-verified (Google's
+  //     verifyIdToken already enforces email_verified=true). Existing prod
+  //     Members predating this rollout are backfilled as verified via
+  //     scripts/backfillEmailVerified.js — they're grandfathered.
+  //   • emailVerificationToken — sha256 of the one-time link token; same
+  //     pattern as resetPasswordToken so the raw token only ever lives in the
+  //     emailed URL, never in storage.
+  //   • emailVerificationExpires — 24 h validity (longer than the 1 h reset
+  //     window: users don't always check mail immediately; verification is
+  //     less time-sensitive than a password reset).
+  // Token fields are select:false (only the verify/resend routes pull them);
+  // emailVerifiedAt is selectable so admin-action gates can read it cheaply.
+  emailVerifiedAt: {
+    type: Date,
+    default: null
+  },
+  emailVerificationToken: {
+    type: String,
+    select: false
+  },
+  emailVerificationExpires: {
+    type: Date,
+    select: false
+  },
   relation: {
     type: String,
     trim: true,
@@ -133,6 +176,10 @@ memberSchema.methods.toJSON = function() {
   delete obj.googleId;
   delete obj.resetPasswordToken;
   delete obj.resetPasswordExpires;
+  delete obj.loginAttempts;
+  delete obj.lockedUntil;
+  delete obj.emailVerificationToken;
+  delete obj.emailVerificationExpires;
   return obj;
 };
 

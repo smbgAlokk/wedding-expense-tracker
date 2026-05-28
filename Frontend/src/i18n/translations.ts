@@ -23,21 +23,24 @@ export const translations = {
     'common.and': '&',
     'common.loading': 'Loading…',
 
-    // Landing — Hero
-    'landing.title1': 'Wedding',
-    'landing.title2': 'Expense Tracker',
-    'landing.subtitle1': 'Track every rupee, together as a family.',
-    'landing.subtitle2': 'Simple enough for everyone.',
-    'landing.createBtn': '💍 Create a Wedding',
+    // Landing — Hero (multi-vertical, Phase 2 polish)
+    'landing.title1': 'Track every rupee,',
+    'landing.title2': 'your way.',
+    'landing.subtitle1': 'Personal budgets, family weddings, group trips —',
+    'landing.subtitle2': 'one tracker for the way you actually spend.',
+    'landing.createBtn': '✨ Create New',
     'landing.joinBtn': '🎉 Join with Code',
     'landing.loginBtn': '🔑 Login (Returning User)',
-    'landing.helperHint': 'Family members join with code • Admins login with email',
-    'landing.eyebrow': 'For Indian Weddings',
-    'landing.trustFamily': 'Whole family',
+    'landing.helperHint': 'New users pick a tracker above • Returning users sign in • Family members join with code',
+    'landing.eyebrow': 'One tracker · Many ways',
+    'landing.trustFamily': 'Solo or group',
     'landing.trustRupee': 'Every rupee',
     'landing.trustSecure': 'Safe & private',
     'landing.panelTitle': 'Get started',
-    'landing.panelSubtitle': 'Choose how you’d like to continue',
+    'landing.panelSubtitle': 'Pick the tracker that fits how you spend',
+    // Hero secondary text links (replaced the old 3-button stack)
+    'landing.signInLink': 'Already have an account? Sign in',
+    'landing.joinCodeLink': 'Joining with a code? Use code',
 
     // Create
     'create.header': 'Create Wedding',
@@ -75,6 +78,33 @@ export const translations = {
     'create.errPasswordMismatch': 'Passwords do not match',
     'create.successCode': 'Wedding created! Code: {code}',
     'create.errFailed': 'Failed to create wedding',
+
+    // Multi-vertical type picker (Phase 2)
+    'pickType.header': 'What do you want to track?',
+    'pickType.subtitle': 'Pick the kind of workspace that fits — you can create more than one.',
+    'pickType.wedding.title': '💒 Wedding',
+    'pickType.wedding.desc': 'Track wedding expenses with your whole family.',
+    'pickType.personal.title': '💰 Personal Budget',
+    'pickType.personal.desc': 'Track your own monthly income and spending.',
+    'pickType.trip.title': '✈️ Trip',
+    'pickType.trip.desc': 'Track group travel expenses & split with friends.',
+    'pickType.trip.soonBadge': 'Coming soon',
+
+    // Create Personal workspace (Phase 2)
+    'createPersonal.header': 'Personal Budget',
+    'createPersonal.subtitle': "Track where your money goes every month — just you, your spending, your numbers.",
+    'createPersonal.workspaceName': 'Budget Name',
+    'createPersonal.workspaceNamePlaceholder': "e.g., My Monthly Budget",
+    'createPersonal.workspaceNameHint': "Leave blank — we'll use your name.",
+    'createPersonal.monthlyBudget': 'Monthly Budget (₹)',
+    'createPersonal.monthlyBudgetPlaceholder': 'e.g., 50000',
+    'createPersonal.monthlyBudgetHint': 'Optional — set a monthly cap to see how much is left.',
+    'createPersonal.submitBtn': '💰 Create Personal Budget',
+    'createPersonal.creating': '⏳ Setting up...',
+    'createPersonal.googleHint': 'Or sign up with Google — no password needed',
+    'createPersonal.errName': 'Please tell us your name',
+    'createPersonal.errFailed': "Couldn't create your budget. Please try again.",
+    'createPersonal.successCreated': '🎉 Your personal budget is ready!',
 
     // Login
     'login.header': 'Welcome Back',
@@ -120,6 +150,23 @@ export const translations = {
     'reset.invalidBody': 'This link is missing or broken. Please request a new password reset.',
     'reset.goToLogin': 'Go to login',
 
+    // Email verification (H-5, 2026-05-28)
+    'verify.verifyingTitle': 'Verifying your email…',
+    'verify.verifyingBody': 'Hold on while we confirm your link.',
+    'verify.successTitle': 'Email verified!',
+    'verify.successBody': 'Your email is confirmed. You can now use all features.',
+    'verify.successCta': 'Continue to sign-in',
+    'verify.invalidTitle': 'Verification link invalid',
+    'verify.invalidBody': 'This link is missing, broken, or expired. Request a new verification email below.',
+    'verify.resendCta': 'Resend verification email',
+    'verify.resendEmailLabel': 'Your email address',
+    'verify.resendBtn': '📩 Send new link',
+    'verify.resending': '⏳ Sending…',
+    'verify.resendSent': "If the email is unverified, we've sent a new link. Check your inbox (and spam).",
+    'verify.resendErrEmail': 'Please enter your email',
+    'verify.bannerUnverified': '📩 Please verify your email — we sent a link to {email}.',
+    'verify.bannerResend': 'Resend',
+
     // Join
     'join.header': 'Join a Wedding',
     'join.code': 'Wedding Code *',
@@ -144,6 +191,7 @@ export const translations = {
     'select.codeLabel': 'Code:',
     'select.entered': 'Entered {name}',
     'select.errFailed': 'Failed to select wedding',
+    'select.errExpired': 'Your sign-in session expired. Please sign in again.',
 
     // Dashboard
     'dashboard.welcome': 'Welcome, {name} 👋',
@@ -166,6 +214,11 @@ export const translations = {
     'dashboard.emptyHint': 'Tap the + button to add the first expense!',
     'dashboard.shareCode': 'Share this code with family',
     'dashboard.copyCode': '📋 Copy Code',
+    // Personal-vertical Dashboard additions (Phase 2)
+    'dashboard.monthlySpent': 'Spent this month',
+    'dashboard.prevMonth': 'Previous month',
+    'dashboard.nextMonth': 'Next month',
+    'dashboard.goToCurrentMonth': 'Go to current month',
 
     // Add Expense
     'add.header': 'Add Expense',
@@ -288,6 +341,11 @@ export const translations = {
     'settings.coupleLabel': '💑 {p1} & {p2}',
     'settings.dateLabel': '📅 {date}',
     'settings.budgetLabel': '💰 Budget: {currency} {amount}',
+    // Personal-vertical Settings copy (Phase 2)
+    'settings.budgetDetails': '💰 Budget Details',
+    'settings.budgetName': 'Budget Name',
+    'settings.monthlyBudget': 'Monthly Budget',
+    'settings.monthlyBudgetLabel': '💰 Monthly Budget: {currency} {amount}',
     'settings.emailLabel': '📧 {email}',
     'settings.categoriesHeader': '📂 Categories',
     'settings.newCategoryPlaceholder': 'New category',
@@ -295,10 +353,13 @@ export const translations = {
     'settings.saveCategories': 'Save Categories',
     'settings.errCategoryName': 'Enter category name',
     'settings.errCategoryExists': 'Category exists',
-    'settings.suggestedCategories': '✨ Add {count} suggested wedding categories',
-    'settings.suggestedCategoriesAdded': '{count} categories added — review and save',
+    'settings.suggestedCategories': '✨ Add {count} suggested categories',
+    'settings.suggestedCategoriesAdded': 'Added {count} suggested categories',
     'settings.savedOk': 'Settings saved!',
-    'settings.errSave': 'Failed to save',
+    'settings.errSave': "Couldn't save. Please try again.",
+    // Auto-save toasts for inline category add / remove (Phase 2 polish)
+    'settings.categoryAdded': "Added '{name}'",
+    'settings.categoryRemoved': "Removed '{name}'",
     'settings.joinCode': 'Wedding Join Code',
     'settings.copy': '📋 Copy',
     'settings.viewMembers': '👥 View Family Members',
@@ -308,6 +369,10 @@ export const translations = {
     'settings.leaveBodyCode': "You'll be logged out of {wedding}. You can rejoin with the wedding code.",
     'settings.leaveYes': 'Yes, Leave Wedding',
     'settings.leftSession': 'You have left the wedding session',
+    // Generic sign-out for single-member verticals (Personal)
+    'settings.signOut': '🚪 Sign Out',
+    'settings.signOutTitle': 'Sign out?',
+    'settings.signOutBody': "You'll be signed out. You can sign back in anytime with your email — your budget and history will be waiting.",
     'settings.languageLabel': 'Language',
 
     // Bottom Nav
@@ -344,6 +409,18 @@ export const translations = {
     'cat.Reception': 'Reception',
     'cat.Honeymoon': 'Honeymoon',
     'cat.Miscellaneous': 'Miscellaneous',
+    // Personal-vertical categories (Phase 2)
+    'cat.Rent': 'Rent',
+    'cat.Groceries': 'Groceries',
+    'cat.Eating Out': 'Eating Out',
+    'cat.Utilities': 'Utilities',
+    'cat.Subscriptions': 'Subscriptions',
+    'cat.Health': 'Health',
+    'cat.Shopping': 'Shopping',
+    'cat.Investments': 'Investments',
+    'cat.EMIs / Loans': 'EMIs / Loans',
+    'cat.Personal Care': 'Personal Care',
+    'cat.Entertainment': 'Entertainment',
 
     // Theme toggle
     'theme.toLight': 'Switch to Light Mode',
@@ -371,21 +448,24 @@ export const translations = {
     'common.and': 'और',
     'common.loading': 'लोड हो रहा है…',
 
-    // Landing — Hero
-    'landing.title1': 'शादी',
-    'landing.title2': 'खर्च ट्रैकर',
-    'landing.subtitle1': 'हर रुपये का हिसाब, पूरे परिवार के साथ।',
-    'landing.subtitle2': 'सबके लिए आसान।',
-    'landing.createBtn': '💍 शादी बनाएँ',
+    // Landing — Hero (multi-vertical, Phase 2 polish)
+    'landing.title1': 'हर रुपये का हिसाब,',
+    'landing.title2': 'आपके तरीके से।',
+    'landing.subtitle1': 'पर्सनल बजट, शादी का खर्च, ट्रिप का हिसाब —',
+    'landing.subtitle2': 'जैसे आप खर्च करते हैं, वैसा ही ट्रैकर।',
+    'landing.createBtn': '✨ नया बनाएँ',
     'landing.joinBtn': '🎉 कोड से जुड़ें',
     'landing.loginBtn': '🔑 लॉगिन (पुराने यूज़र)',
-    'landing.helperHint': 'परिवार वाले कोड से जुड़ें • एडमिन ईमेल से लॉगिन करें',
-    'landing.eyebrow': 'भारतीय शादियों के लिए',
-    'landing.trustFamily': 'पूरा परिवार',
+    'landing.helperHint': 'नए यूज़र ऊपर से ट्रैकर चुनें • पुराने यूज़र साइन इन करें • परिवार वाले कोड से जुड़ें',
+    'landing.eyebrow': 'एक ट्रैकर · हर तरीका',
+    'landing.trustFamily': 'अकेले या साथ में',
     'landing.trustRupee': 'हर रुपया',
     'landing.trustSecure': 'सुरक्षित',
     'landing.panelTitle': 'शुरू करें',
-    'landing.panelSubtitle': 'चुनिए आप कैसे आगे बढ़ना चाहते हैं',
+    'landing.panelSubtitle': 'जो आपके खर्च से मेल खाए वो ट्रैकर चुनें',
+    // Hero secondary text links (replaced the old 3-button stack)
+    'landing.signInLink': 'पहले से अकाउंट है? साइन इन',
+    'landing.joinCodeLink': 'कोड से जुड़ना है? कोड डालें',
 
     // Create
     'create.header': 'नई शादी बनाएँ',
@@ -423,6 +503,33 @@ export const translations = {
     'create.errPasswordMismatch': 'पासवर्ड मेल नहीं खा रहे',
     'create.successCode': 'शादी बन गई! कोड: {code}',
     'create.errFailed': 'शादी बनाने में दिक्कत हुई',
+
+    // Multi-vertical type picker (Phase 2)
+    'pickType.header': 'आप क्या ट्रैक करना चाहते हैं?',
+    'pickType.subtitle': 'अपनी ज़रूरत के हिसाब से चुनें — एक से ज़्यादा भी बना सकते हैं।',
+    'pickType.wedding.title': '💒 शादी',
+    'pickType.wedding.desc': 'पूरे परिवार के साथ शादी के खर्चे ट्रैक करें।',
+    'pickType.personal.title': '💰 पर्सनल बजट',
+    'pickType.personal.desc': 'अपनी महीने की आमदनी और खर्च खुद के लिए ट्रैक करें।',
+    'pickType.trip.title': '✈️ ट्रिप',
+    'pickType.trip.desc': 'दोस्तों के साथ ट्रिप के खर्चे ट्रैक करें और बाँटें।',
+    'pickType.trip.soonBadge': 'जल्द आ रहा है',
+
+    // Create Personal workspace (Phase 2)
+    'createPersonal.header': 'पर्सनल बजट',
+    'createPersonal.subtitle': 'महीने भर के खर्चे एक जगह ट्रैक करें — सिर्फ़ आप, आपका खर्च, आपका हिसाब।',
+    'createPersonal.workspaceName': 'बजट का नाम',
+    'createPersonal.workspaceNamePlaceholder': 'जैसे, मेरा महीने का बजट',
+    'createPersonal.workspaceNameHint': 'खाली छोड़ें — हम आपके नाम से बना देंगे।',
+    'createPersonal.monthlyBudget': 'महीने का बजट (₹)',
+    'createPersonal.monthlyBudgetPlaceholder': 'जैसे, 50000',
+    'createPersonal.monthlyBudgetHint': 'इच्छानुसार — महीने की लिमिट डालें ताकि देख सकें कितना बचा है।',
+    'createPersonal.submitBtn': '💰 पर्सनल बजट बनाएँ',
+    'createPersonal.creating': '⏳ बना रहे हैं...',
+    'createPersonal.googleHint': 'या Google से साइन अप करें — पासवर्ड की ज़रूरत नहीं',
+    'createPersonal.errName': 'अपना नाम बताएँ',
+    'createPersonal.errFailed': 'बजट नहीं बन पाया। फिर कोशिश करें।',
+    'createPersonal.successCreated': '🎉 आपका पर्सनल बजट तैयार है!',
 
     // Login
     'login.header': 'वापस स्वागत है',
@@ -468,6 +575,23 @@ export const translations = {
     'reset.invalidBody': 'यह लिंक गायब या टूटा हुआ है। कृपया नया पासवर्ड रीसेट माँगें।',
     'reset.goToLogin': 'लॉगिन पर जाएँ',
 
+    // Email verification (H-5, 2026-05-28)
+    'verify.verifyingTitle': 'आपका ईमेल वेरिफाई हो रहा है…',
+    'verify.verifyingBody': 'थोड़ा रुकें, हम आपका लिंक चेक कर रहे हैं।',
+    'verify.successTitle': 'ईमेल वेरिफाई हो गया!',
+    'verify.successBody': 'आपका ईमेल कन्फर्म हो गया है। अब आप सभी फ़ीचर्स इस्तेमाल कर सकते हैं।',
+    'verify.successCta': 'साइन-इन पर जाएँ',
+    'verify.invalidTitle': 'वेरिफिकेशन लिंक गलत है',
+    'verify.invalidBody': 'यह लिंक गायब, टूटा हुआ या ख़त्म हो चुका है। नीचे से नया वेरिफिकेशन ईमेल माँगें।',
+    'verify.resendCta': 'वेरिफिकेशन ईमेल दोबारा भेजें',
+    'verify.resendEmailLabel': 'आपका ईमेल पता',
+    'verify.resendBtn': '📩 नया लिंक भेजें',
+    'verify.resending': '⏳ भेज रहे हैं…',
+    'verify.resendSent': 'अगर ईमेल अब तक वेरिफाई नहीं है, तो हमने नया लिंक भेज दिया है। अपना इनबॉक्स (और स्पैम) देखें।',
+    'verify.resendErrEmail': 'अपना ईमेल डालें',
+    'verify.bannerUnverified': '📩 कृपया अपना ईमेल वेरिफाई करें — हमने {email} पर लिंक भेजा है।',
+    'verify.bannerResend': 'फिर भेजें',
+
     // Join
     'join.header': 'शादी से जुड़ें',
     'join.code': 'शादी का कोड *',
@@ -492,6 +616,7 @@ export const translations = {
     'select.codeLabel': 'कोड:',
     'select.entered': '{name} में आ गए',
     'select.errFailed': 'शादी चुनने में दिक्कत',
+    'select.errExpired': 'आपका साइन-इन सेशन ख़त्म हो गया। फिर से साइन इन करें।',
 
     // Dashboard
     'dashboard.welcome': 'नमस्ते, {name} 👋',
@@ -514,6 +639,11 @@ export const translations = {
     'dashboard.emptyHint': 'पहला खर्च जोड़ने के लिए + दबाएँ!',
     'dashboard.shareCode': 'यह कोड परिवार के साथ शेयर करें',
     'dashboard.copyCode': '📋 कोड कॉपी करें',
+    // Personal-vertical Dashboard additions (Phase 2)
+    'dashboard.monthlySpent': 'इस महीने का खर्च',
+    'dashboard.prevMonth': 'पिछला महीना',
+    'dashboard.nextMonth': 'अगला महीना',
+    'dashboard.goToCurrentMonth': 'इस महीने पर आएँ',
 
     // Add Expense
     'add.header': 'खर्च जोड़ें',
@@ -636,6 +766,11 @@ export const translations = {
     'settings.coupleLabel': '💑 {p1} और {p2}',
     'settings.dateLabel': '📅 {date}',
     'settings.budgetLabel': '💰 बजट: {currency} {amount}',
+    // Personal-vertical Settings copy (Phase 2)
+    'settings.budgetDetails': '💰 बजट की जानकारी',
+    'settings.budgetName': 'बजट का नाम',
+    'settings.monthlyBudget': 'महीने का बजट',
+    'settings.monthlyBudgetLabel': '💰 महीने का बजट: {currency} {amount}',
     'settings.emailLabel': '📧 {email}',
     'settings.categoriesHeader': '📂 कैटेगरी',
     'settings.newCategoryPlaceholder': 'नई कैटेगरी',
@@ -644,9 +779,12 @@ export const translations = {
     'settings.errCategoryName': 'कैटेगरी का नाम डालें',
     'settings.errCategoryExists': 'कैटेगरी पहले से है',
     'settings.suggestedCategories': '✨ {count} सुझाई गई कैटेगरी जोड़ें',
-    'settings.suggestedCategoriesAdded': '{count} कैटेगरी जुड़ गईं — अब सेव करें',
+    'settings.suggestedCategoriesAdded': '{count} कैटेगरी जुड़ गईं',
     'settings.savedOk': 'सेटिंग सेव हो गई!',
-    'settings.errSave': 'सेव नहीं हो सका',
+    'settings.errSave': 'सेव नहीं हो सका। फिर कोशिश करें।',
+    // Auto-save toasts (Phase 2 polish)
+    'settings.categoryAdded': "'{name}' जुड़ गया",
+    'settings.categoryRemoved': "'{name}' हटा दिया गया",
     'settings.joinCode': 'शादी का जॉइन कोड',
     'settings.copy': '📋 कॉपी',
     'settings.viewMembers': '👥 परिवार के सदस्य देखें',
@@ -656,6 +794,10 @@ export const translations = {
     'settings.leaveBodyCode': 'आप {wedding} से लॉगआउट हो जाएँगे। आप शादी के कोड से फिर से जुड़ सकते हैं।',
     'settings.leaveYes': 'हाँ, शादी छोड़ें',
     'settings.leftSession': 'आप शादी से लॉगआउट हो गए',
+    // Generic sign-out for single-member verticals (Personal)
+    'settings.signOut': '🚪 साइन आउट',
+    'settings.signOutTitle': 'साइन आउट करें?',
+    'settings.signOutBody': 'आप साइन आउट हो जाएँगे। आप कभी भी अपने ईमेल से वापस आ सकते हैं — आपका बजट और हिसाब सब वैसे ही रहेगा।',
     'settings.languageLabel': 'भाषा',
 
     // Bottom Nav
@@ -692,6 +834,18 @@ export const translations = {
     'cat.Reception': 'रिसेप्शन',
     'cat.Honeymoon': 'हनीमून',
     'cat.Miscellaneous': 'अन्य खर्च',
+    // Personal-vertical categories (Phase 2)
+    'cat.Rent': 'किराया',
+    'cat.Groceries': 'राशन',
+    'cat.Eating Out': 'बाहर खाना',
+    'cat.Utilities': 'बिजली / पानी',
+    'cat.Subscriptions': 'सब्सक्रिप्शन',
+    'cat.Health': 'सेहत',
+    'cat.Shopping': 'शॉपिंग',
+    'cat.Investments': 'निवेश',
+    'cat.EMIs / Loans': 'EMI / लोन',
+    'cat.Personal Care': 'पर्सनल केयर',
+    'cat.Entertainment': 'मनोरंजन',
 
     // Theme toggle
     'theme.toLight': 'लाइट मोड में बदलें',
@@ -763,6 +917,11 @@ const SERVER_EXACT_HI = {
   'No account found with this Google email. Please create a wedding first or join one with a code.': 'इस Google ईमेल से कोई अकाउंट नहीं मिला। पहले शादी बनाएँ या कोड से जुड़ें।',
   'No wedding found with this code.': 'इस कोड से कोई शादी नहीं मिली।',
   'Incorrect email or password. Please try again.': 'ईमेल या पासवर्ड गलत है। दोबारा कोशिश करें।',
+  'Too many failed sign-in attempts. Please try again later.': 'बहुत बार गलत साइन-इन की कोशिश हुई। कुछ देर बाद फिर से कोशिश करें।',
+  'Your email is verified. You can now use all features.': 'आपका ईमेल वेरिफाई हो गया। अब आप सभी फ़ीचर्स इस्तेमाल कर सकते हैं।',
+  'This verification link is invalid or has expired. Please request a new one.': 'यह वेरिफिकेशन लिंक गलत है या इसकी समय-सीमा खत्म हो गई। नया लिंक माँगें।',
+  'If an account exists for this email and is not yet verified, a verification link has been sent.': 'अगर इस ईमेल से अकाउंट है और अभी तक वेरिफाई नहीं हुआ, तो वेरिफिकेशन लिंक भेज दिया गया है।',
+  'Please verify your email before resetting your password. We can resend the verification link.': 'पासवर्ड रीसेट करने से पहले अपना ईमेल वेरिफाई करें। हम वेरिफिकेशन लिंक दोबारा भेज सकते हैं।',
   'An account with this name already exists. Please use Login instead.': 'इस नाम से पहले से एक अकाउंट है। कृपया लॉगिन करें।',
   'If an account exists for this email, a reset link has been sent.': 'अगर इस ईमेल से कोई अकाउंट है, तो रीसेट लिंक भेज दिया गया है।',
   'This reset link is invalid or has expired. Please request a new one.': 'यह रीसेट लिंक गलत है या इसकी समय-सीमा खत्म हो गई। नया लिंक माँगें।',

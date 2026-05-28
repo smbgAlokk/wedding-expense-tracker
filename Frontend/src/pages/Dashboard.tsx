@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useWedding } from '../context/WeddingContext';
@@ -8,16 +8,66 @@ import ThemeToggle from '../components/ThemeToggle';
 import LanguageToggle from '../components/LanguageToggle';
 import ExpenseDetailSheet from '../components/ExpenseDetailSheet';
 
+// Format the selected calendar month label ("May 2026" / "मई 2026") for the
+// Personal-vertical month switcher.
+function fmtMonth(d: Date, lang: string): string {
+  try {
+    return new Intl.DateTimeFormat(lang === 'hi' ? 'hi-IN' : 'en-IN', {
+      year: 'numeric',
+      month: 'long',
+      numberingSystem: 'latn',
+    }).format(d);
+  } catch {
+    return d.toLocaleDateString();
+  }
+}
+
 const AVATAR_COLORS = ['#D84381','#7C3AED','#2563EB','#059669','#D97706','#DC2626','#9333EA','#E11D48'];
 function getColor(name) { let h=0; for(let i=0;i<(name||'').length;i++) h=name.charCodeAt(i)+((h<<5)-h); return AVATAR_COLORS[Math.abs(h)%AVATAR_COLORS.length]; }
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { wedding, member, summary, loading, refreshSummary } = useWedding();
+  const { wedding, member, summary, loading, features, refreshSummary } = useWedding();
   const { t, tCat, lang } = useLang();
   const [selectedExpense, setSelectedExpense] = useState(null);
 
-  useEffect(() => { refreshSummary(); }, [refreshSummary]);
+  // Personal-vertical month switcher state. `selectedMonth` is the 1st-of-month
+  // Date in the user's LOCAL timezone — converting to ISO with .toISOString()
+  // then gives the right UTC boundary for the backend's $gte/$lt filter (so
+  // every expense the user logged during their May falls in the May query,
+  // regardless of how IST/UTC offset shifts the wall-clock boundary).
+  const [selectedMonth, setSelectedMonth] = useState<Date>(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  const monthRange = useMemo(() => {
+    const from = selectedMonth;
+    const to = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 1);
+    return { from: from.toISOString(), to: to.toISOString() };
+  }, [selectedMonth]);
+
+  // Refetch summary whenever the relevant inputs change. For Personal, this
+  // re-fires when the user picks a different month; for Wedding/Trip, it just
+  // pulls the lifetime summary once and never re-fires (range is stable).
+  useEffect(() => {
+    if (features.monthlyBudget) {
+      refreshSummary({ from: monthRange.from, to: monthRange.to });
+    } else {
+      refreshSummary();
+    }
+  }, [features.monthlyBudget, monthRange.from, monthRange.to, refreshSummary]);
+
+  const prevMonth = () => setSelectedMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1));
+  const nextMonth = () => setSelectedMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1));
+  const goToCurrentMonth = () => {
+    const now = new Date();
+    setSelectedMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+  };
+  const isCurrentMonth = (() => {
+    const now = new Date();
+    return selectedMonth.getFullYear() === now.getFullYear() && selectedMonth.getMonth() === now.getMonth();
+  })();
 
   if (loading && !summary) {
     return (
@@ -67,9 +117,47 @@ export default function Dashboard() {
         </div>
       </header>
 
+      {/* Month switcher — Personal vertical only */}
+      {features.monthlyBudget && (
+        <div className="surface-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 'var(--space-3) var(--space-4)', marginBottom: 12 }}>
+          <button
+            type="button"
+            onClick={prevMonth}
+            aria-label={t('dashboard.prevMonth')}
+            className="btn btn-ghost"
+            style={{ minWidth: 44, padding: '6px 10px', fontSize: '1rem' }}
+          >
+            ◀
+          </button>
+          <button
+            type="button"
+            onClick={goToCurrentMonth}
+            disabled={isCurrentMonth}
+            className="btn btn-ghost"
+            style={{ flex: 1, fontWeight: 600, fontSize: '1rem', textAlign: 'center', padding: '6px 10px' }}
+            aria-label={t('dashboard.goToCurrentMonth')}
+            title={isCurrentMonth ? '' : t('dashboard.goToCurrentMonth')}
+          >
+            {fmtMonth(selectedMonth, lang)}
+            {!isCurrentMonth && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 6 }}>↻</span>}
+          </button>
+          <button
+            type="button"
+            onClick={nextMonth}
+            aria-label={t('dashboard.nextMonth')}
+            className="btn btn-ghost"
+            style={{ minWidth: 44, padding: '6px 10px', fontSize: '1rem' }}
+          >
+            ▶
+          </button>
+        </div>
+      )}
+
       {/* Total Expense Hero */}
       <div className="hero-card sparkle" style={{ textAlign: 'center', marginBottom: 16, padding: 'var(--space-8) var(--space-5)' }}>
-        <p className="section-title" style={{ marginBottom: 6 }}>{t('dashboard.totalExpenses')}</p>
+        <p className="section-title" style={{ marginBottom: 6 }}>
+          {features.monthlyBudget ? t('dashboard.monthlySpent') : t('dashboard.totalExpenses')}
+        </p>
         <h2 className="text-tnum" style={{ fontSize: 'clamp(2.4rem, 9vw, 3.2rem)', fontWeight: 800, color: 'var(--primary-light)', lineHeight: 1.05, letterSpacing: '-0.03em' }}>
           {fmt(totalSpent)}
         </h2>
@@ -93,13 +181,16 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* Quick Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 28 }}>
-        <div className="stat-card stat-card-primary">
-          <span className="stat-icon" aria-hidden="true">👥</span>
-          <div className="stat-value" style={{ color: 'var(--primary)' }}>{summary?.memberBreakdown?.length || 0}</div>
-          <div className="stat-label">{t('dashboard.contributors')}</div>
-        </div>
+      {/* Quick Stats — Contributors card is hidden for single-member verticals
+          (Personal). The grid collapses to a single full-width Categories card. */}
+      <div style={{ display: 'grid', gridTemplateColumns: features.multiMember ? '1fr 1fr' : '1fr', gap: 12, marginBottom: 28 }}>
+        {features.multiMember && (
+          <div className="stat-card stat-card-primary">
+            <span className="stat-icon" aria-hidden="true">👥</span>
+            <div className="stat-value" style={{ color: 'var(--primary)' }}>{summary?.memberBreakdown?.length || 0}</div>
+            <div className="stat-label">{t('dashboard.contributors')}</div>
+          </div>
+        )}
         <div className="stat-card stat-card-accent">
           <span className="stat-icon" aria-hidden="true">📂</span>
           <div className="stat-value" style={{ color: 'var(--accent)' }}>{summary?.categoryBreakdown?.length || 0}</div>
@@ -142,8 +233,8 @@ export default function Dashboard() {
           </section>
         )}
 
-        {/* Top Contributors */}
-        {hasContributors && (
+        {/* Top Contributors — single-member verticals (Personal) hide this entirely */}
+        {features.topContributors && hasContributors && (
           <section style={{ marginBottom: 28 }}>
             <h3 className="section-title">{t('dashboard.topContributors')}</h3>
             <div className="stagger">
@@ -173,7 +264,10 @@ export default function Dashboard() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h3 className="section-title" style={{ marginBottom: 0 }}>{t('dashboard.recentActivity')}</h3>
           {hasRecent && (
-            <button className="btn btn-ghost btn-xs" onClick={() => navigate('/all-expenses')}>
+            <button
+              className="btn btn-ghost btn-xs"
+              onClick={() => navigate(features.multiMember ? '/all-expenses' : '/my-expenses')}
+            >
               {t('dashboard.viewAll')}
             </button>
           )}
@@ -201,7 +295,12 @@ export default function Dashboard() {
                   <div className="expense-icon">{icon}</div>
                   <div className="expense-info">
                     <h4>{exp.description || tCat(exp.category)}</h4>
-                    <p>{exp.memberId?.name || t('common.unknown')} • {fmtDate(exp.createdAt, lang)}</p>
+                    <p>
+                      {features.multiMember && (
+                        <>{exp.memberId?.name || t('common.unknown')} • </>
+                      )}
+                      {fmtDate(exp.createdAt, lang)}
+                    </p>
                     {exp.receiptUrl && (
                       <span className="receipt-badge" style={{ marginTop: 4 }}>
                         {t('receipt.badge')}

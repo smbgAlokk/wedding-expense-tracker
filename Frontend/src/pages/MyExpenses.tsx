@@ -12,7 +12,7 @@ import '../AllExpensesTable.css';
 
 export default function MyExpenses() {
   const navigate = useNavigate();
-  const { wedding, refreshSummary } = useWedding();
+  const { wedding, features, refreshSummary } = useWedding();
   const { t, tCat, tServer, lang } = useLang();
   const [expenses, setExpenses] = useState([]);
   const [totalSpent, setTotalSpent] = useState(0);
@@ -30,11 +30,24 @@ export default function MyExpenses() {
   // Memoized so it keeps a stable reference for the useMemo hooks below.
   const categories = useMemo(() => wedding?.categories || [], [wedding]);
 
+  // Personal-vertical month scoping (Phase 2): when the workspace is a
+  // monthly-budget type, fetch only the CURRENT calendar month's expenses.
+  // Wedding/Trip pass nothing → lifetime list, the legacy behaviour.
+  // (Future Phase 2b can wire this to a shared month switcher across Dashboard
+  // + MyExpenses; today both default to the real-world current month.)
+  const monthRange = useMemo(() => {
+    if (!features.monthlyBudget) return null;
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return { from: from.toISOString(), to: to.toISOString() };
+  }, [features.monthlyBudget]);
+
   // No synchronous setState here — `loading` starts true and is only cleared in the
   // finally (post-await), so the deferred mount call can't cause a cascading render.
   const fetchExpenses = useCallback(async (signal?: AbortSignal) => {
     try {
-      const res = await getMyExpenses(signal);
+      const res = await getMyExpenses(monthRange ?? undefined, signal);
       if (signal?.aborted) return;
       setExpenses(res.data.data.expenses);
       setTotalSpent(res.data.data.totalSpent);
@@ -44,7 +57,7 @@ export default function MyExpenses() {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [t, tServer]);
+  }, [t, tServer, monthRange]);
 
   useEffect(() => {
     const controller = new AbortController();
