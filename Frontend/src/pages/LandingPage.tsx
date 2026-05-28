@@ -3,13 +3,15 @@ import { useNavigate, type NavigateFunction } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useWedding } from '../context/WeddingContext';
 import { useLang } from '../context/LanguageContext';
-import { createWedding, joinWedding, loginUser, googleLogin, selectWedding, forgotPassword } from '../api';
+import { createWedding, createPersonalWorkspace, joinWedding, loginUser, googleLogin, selectWedding, forgotPassword } from '../api';
 import ThemeToggle from '../components/ThemeToggle';
 import LanguageToggle from '../components/LanguageToggle';
 import type { Member, Wedding, AuthResult, WeddingOption } from '../types';
 
-// Which auth surface is showing (null = the landing hero).
-type Mode = 'create' | 'join' | 'login' | 'select-wedding' | 'forgot';
+// Which auth surface is showing (null = the landing hero, which now embeds the
+// multi-vertical type picker directly so users see all options upfront —
+// 'create' is the Wedding form, 'create-personal' is the Personal-vertical form.
+type Mode = 'create' | 'create-personal' | 'join' | 'login' | 'select-wedding' | 'forgot';
 // Persists an authenticated member + wedding + token into context/localStorage.
 type LoginFn = (member: Member, wedding: Wedding, token: string) => void;
 // Receives a verified Google ID-token credential string.
@@ -152,10 +154,17 @@ export default function LandingPage() {
   const navigate = useNavigate();
 
   const [weddingList, setWeddingList] = useState<WeddingOption[] | null>(null);
+  // Security audit C-1 (2026-05-28): when the login response is multi-wedding,
+  // the server now mints a short-lived (5 min) selector token that must be
+  // replayed on the follow-up /select-wedding request. Stored here in component
+  // state only — NOT in localStorage. If the page unmounts, the token is lost
+  // and the user falls back to logging in again, which is the safe default.
+  const [selectorToken, setSelectorToken] = useState<string | null>(null);
 
   const handleLoginSuccess = (data: AuthResult) => {
     if (data.multipleWeddings) {
       setWeddingList(data.weddings);
+      setSelectorToken(data.selectorToken || null);
       setMode('select-wedding');
     } else {
       login(data.member, data.wedding, data.token);
@@ -165,23 +174,42 @@ export default function LandingPage() {
   };
 
   const handleSelectWedding = async (memberId: string) => {
+    if (!selectorToken) {
+      // Defence in depth: the server will 401 without it, but bail early
+      // with a clear message rather than letting the user click and wait.
+      toast.error(t('select.errExpired'));
+      setMode('login');
+      return;
+    }
     try {
-      const res = await selectWedding({ memberId });
+      const res = await selectWedding({ memberId, selectorToken });
       const { wedding, member, token } = res.data.data;
       login(member, wedding, token);
       toast.success(t('select.entered', { name: wedding.weddingName }));
       navigate('/dashboard');
     } catch (err) {
+      // 401 means the selector token expired or the memberId wasn't in the
+      // allowlist — either way the multi-wedding flow needs to restart from
+      // /login. Route back to the login form with a clear message instead of
+      // leaving the user stuck on a screen whose tokens are dead.
+      if (err.response?.status === 401) {
+        setSelectorToken(null);
+        setWeddingList(null);
+        setMode('login');
+        toast.error(tServer(err.response?.data?.message) || t('select.errExpired'));
+        return;
+      }
       toast.error(tServer(err.response?.data?.message) || t('select.errFailed'));
     }
   };
 
   return (
     <div className="auth-shell">
-      {/* Architectural background watermark — decorative, skipped by screen readers */}
+      {/* Architectural background watermark — decorative, skipped by screen
+          readers. Neutral words now that the app is multi-vertical (Phase 2). */}
       <div className="auth-watermark" aria-hidden="true">
-        <span className="aw-word aw-1">WEDDING</span>
-        <span className="aw-word aw-2">EXPENSE</span>
+        <span className="aw-word aw-1">EVERY</span>
+        <span className="aw-word aw-2">RUPEE</span>
       </div>
 
       <div className="auth-toggles">
@@ -194,6 +222,7 @@ export default function LandingPage() {
       {mode && (
         <div className="auth-panel auth-panel-form animate-scale">
           {mode === 'create' && <CreateForm onBack={() => setMode(null)} login={login} navigate={navigate} />}
+          {mode === 'create-personal' && <CreatePersonalForm onBack={() => setMode(null)} login={login} navigate={navigate} />}
           {mode === 'join' && <JoinForm onBack={() => setMode(null)} login={login} navigate={navigate} onAuthSuccess={handleLoginSuccess} onSwitchToLogin={() => setMode('login')} />}
           {mode === 'login' && <LoginForm onBack={() => setMode(null)} onSuccess={handleLoginSuccess} onForgot={() => setMode('forgot')} />}
           {mode === 'forgot' && <ForgotPasswordForm onBack={() => setMode('login')} />}
@@ -222,13 +251,15 @@ function HeroSection({ onSelect, onGoogleSuccess }: { onSelect: (mode: Mode) => 
     <div className="auth-hero animate-in">
       {/* LEFT — brand / showcase panel */}
       <div className="auth-brand">
+        {/* Neutral money-bag emblem with vertical-themed sparks (💒 wedding,
+            ✈️ trip, ✨ generic) signalling the multi-vertical nature. */}
         <div className="landing-emblem">
           <span className="landing-emblem-glow" aria-hidden="true" />
           <span className="landing-emblem-ring" aria-hidden="true" />
-          <span className="landing-emblem-icon" role="img" aria-label="Wedding venue">💒</span>
-          <span className="landing-spark landing-spark-1" aria-hidden="true">✨</span>
-          <span className="landing-spark landing-spark-2" aria-hidden="true">💍</span>
-          <span className="landing-spark landing-spark-3" aria-hidden="true">🌸</span>
+          <span className="landing-emblem-icon" role="img" aria-label="Expense tracker">💰</span>
+          <span className="landing-spark landing-spark-1" aria-hidden="true">💒</span>
+          <span className="landing-spark landing-spark-2" aria-hidden="true">✈️</span>
+          <span className="landing-spark landing-spark-3" aria-hidden="true">✨</span>
         </div>
 
         <div className="status-pill">
@@ -252,27 +283,88 @@ function HeroSection({ onSelect, onGoogleSuccess }: { onSelect: (mode: Mode) => 
         </div>
       </div>
 
-      {/* RIGHT — auth card. Buttons + Google share one width so nothing looks loose */}
+      {/* RIGHT — auth card. The multi-vertical type picker now lives directly
+          on the hero (three cards) instead of behind a "Create New" button →
+          the user sees every supported vertical at a glance. Login + Join with
+          Code become secondary text links so returning users + family members
+          joining by code still reach their flow in one tap. */}
       <div className="auth-panel">
         <div className="auth-panel-head">
           <h2>{t('landing.panelTitle')}</h2>
           <p>{t('landing.panelSubtitle')}</p>
         </div>
 
-        <div className="stagger landing-actions">
-          <button className="btn btn-primary btn-full btn-lg" onClick={() => onSelect('create')} id="btn-create-wedding">
-            {t('landing.createBtn')}
+        <div className="stagger" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Wedding — active */}
+          <button
+            type="button"
+            onClick={() => onSelect('create')}
+            id="btn-pick-wedding"
+            className="surface-card"
+            style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', textAlign: 'left', cursor: 'pointer', border: '1px solid var(--divider)', borderRadius: 'var(--radius-lg)' }}
+          >
+            <span aria-hidden="true" style={{ fontSize: '1.8rem', lineHeight: 1 }}>💒</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-primary)' }}>{t('pickType.wedding.title')}</span>
+              <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 2 }}>{t('pickType.wedding.desc')}</span>
+            </span>
+            <span aria-hidden="true" style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>→</span>
           </button>
-          <button className="btn btn-secondary btn-full btn-lg" onClick={() => onSelect('join')} id="btn-join-wedding">
-            {t('landing.joinBtn')}
+
+          {/* Personal — active */}
+          <button
+            type="button"
+            onClick={() => onSelect('create-personal')}
+            id="btn-pick-personal"
+            className="surface-card"
+            style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', textAlign: 'left', cursor: 'pointer', border: '1px solid var(--divider)', borderRadius: 'var(--radius-lg)' }}
+          >
+            <span aria-hidden="true" style={{ fontSize: '1.8rem', lineHeight: 1 }}>💰</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-primary)' }}>{t('pickType.personal.title')}</span>
+              <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 2 }}>{t('pickType.personal.desc')}</span>
+            </span>
+            <span aria-hidden="true" style={{ color: 'var(--text-muted)', fontSize: '1.1rem' }}>→</span>
           </button>
-          <button className="btn btn-ghost btn-full btn-lg" onClick={() => onSelect('login')} id="btn-login">
-            {t('landing.loginBtn')}
-          </button>
+
+          {/* Trip — coming soon */}
+          <div
+            aria-disabled="true"
+            className="surface-card"
+            style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', textAlign: 'left', border: '1px solid var(--divider)', borderRadius: 'var(--radius-lg)', opacity: 0.55, cursor: 'not-allowed' }}
+          >
+            <span aria-hidden="true" style={{ fontSize: '1.8rem', lineHeight: 1 }}>✈️</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontWeight: 700, fontSize: '0.98rem', color: 'var(--text-primary)' }}>{t('pickType.trip.title')}</span>
+              <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 2 }}>{t('pickType.trip.desc')}</span>
+            </span>
+            <span className="pill" style={{ fontSize: '0.66rem', fontWeight: 600, padding: '3px 8px', background: 'var(--surface-elevated)', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{t('pickType.trip.soonBadge')}</span>
+          </div>
         </div>
 
         <OrDivider />
         <GoogleAuthButton text="continue_with" onCredential={handleHeroGoogle} />
+
+        {/* Secondary actions — small text links for the two non-create flows. */}
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap', fontSize: '0.83rem' }}>
+          <button
+            type="button"
+            onClick={() => onSelect('login')}
+            id="btn-link-login"
+            style={{ background: 'none', border: 'none', color: 'var(--primary-light)', fontWeight: 600, cursor: 'pointer', padding: '4px 6px' }}
+          >
+            {t('landing.signInLink')}
+          </button>
+          <span aria-hidden="true" style={{ color: 'var(--text-muted)' }}>·</span>
+          <button
+            type="button"
+            onClick={() => onSelect('join')}
+            id="btn-link-join"
+            style={{ background: 'none', border: 'none', color: 'var(--primary-light)', fontWeight: 600, cursor: 'pointer', padding: '4px 6px' }}
+          >
+            {t('landing.joinCodeLink')}
+          </button>
+        </div>
 
         <p className="landing-hint">{t('landing.helperHint')}</p>
       </div>
@@ -583,7 +675,7 @@ function SelectWeddingForm({ weddings, onSelect, onBack }: { weddings: WeddingOp
             <div style={{ flex: 1, minWidth: 0 }}>
               <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.weddingName}</h3>
               <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-                {w.role === 'admin' ? t('select.admin') : t('select.member')} • {t('select.codeLabel')} <span className="text-tnum">{w.joinCode}</span>
+                {w.role === 'admin' ? t('select.admin') : t('select.member')}
               </p>
             </div>
             <span style={{ color: 'var(--primary-light)', fontSize: '1.3rem', flexShrink: 0 }}>→</span>
@@ -678,6 +770,139 @@ function JoinForm({ onBack, login, navigate, onAuthSuccess, onSwitchToLogin }: {
         {t('join.googleHint')}
       </p>
       <GoogleAuthButton text="continue_with" onCredential={handleGoogleJoin} />
+    </div>
+  );
+}
+
+/**
+ * Personal-vertical create form (Phase 2, 2026-05-27). Simpler than the
+ * wedding-create form — just workspace name (optional), monthly budget
+ * (optional), the owner's name, and email+password OR Google. Backend
+ * auto-creates the lone owner member, so there's no admin-relation field and
+ * no join code to share.
+ */
+function CreatePersonalForm({ onBack, login, navigate }: { onBack: () => void; login: LoginFn; navigate: NavigateFunction }) {
+  const { t, tServer } = useLang();
+  const [form, setForm] = useState({
+    name: '', monthlyBudget: '',
+    adminName: '',
+    email: '', password: '', confirmPassword: ''
+  });
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const set = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
+
+  const finishCreate = (res: { data: { data: AuthResult } }) => {
+    const { wedding, member, token } = res.data.data;
+    login(member, wedding, token);
+    toast.success(t('createPersonal.successCreated'));
+    navigate('/dashboard');
+  };
+
+  const handleSubmit = async (e: SyntheticEvent) => {
+    e.preventDefault();
+    if (!form.adminName.trim()) return toast.error(t('createPersonal.errName'));
+    if (!form.email) return toast.error(t('create.errEmail'));
+    if (!form.password) return toast.error(t('create.errPassword'));
+    if (form.password.length < 6) return toast.error(t('create.errPasswordLength'));
+    if (form.password !== form.confirmPassword) return toast.error(t('create.errPasswordMismatch'));
+
+    setLoading(true);
+    try {
+      const res = await createPersonalWorkspace({
+        name: form.name,
+        monthlyBudget: parseFloat(form.monthlyBudget) || 0,
+        adminName: form.adminName,
+        email: form.email,
+        password: form.password,
+        confirmPassword: form.confirmPassword,
+      });
+      finishCreate(res);
+    } catch (err: any) {
+      toast.error(tServer(err.response?.data?.message) || t('createPersonal.errFailed'));
+    } finally { setLoading(false); }
+  };
+
+  const handleGoogleSignup = async (credential: string) => {
+    if (!form.adminName.trim()) return toast.error(t('createPersonal.errName'));
+    setLoading(true);
+    try {
+      const res = await createPersonalWorkspace({
+        name: form.name,
+        monthlyBudget: parseFloat(form.monthlyBudget) || 0,
+        adminName: form.adminName,
+        googleCredential: credential,
+      });
+      finishCreate(res);
+    } catch (err: any) {
+      toast.error(tServer(err.response?.data?.message) || t('login.errGoogleFailed'));
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="animate-in" style={{ width: '100%' }}>
+      <div className="page-header">
+        <button className="back-btn" onClick={onBack} aria-label="Back">←</button>
+        <h1>{t('createPersonal.header')}</h1>
+      </div>
+      <p className="text-muted" style={{ fontSize: '0.92rem', marginBottom: 20 }}>{t('createPersonal.subtitle')}</p>
+
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label className="form-label">{t('createPersonal.workspaceName')}</label>
+          <input className="form-input" placeholder={t('createPersonal.workspaceNamePlaceholder')} value={form.name} onChange={e => set('name', e.target.value)} id="input-personal-name" />
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 4 }}>{t('createPersonal.workspaceNameHint')}</p>
+        </div>
+        <div className="form-group">
+          <label className="form-label">{t('createPersonal.monthlyBudget')}</label>
+          <input className="form-input" type="number" inputMode="decimal" placeholder={t('createPersonal.monthlyBudgetPlaceholder')} value={form.monthlyBudget} onChange={e => set('monthlyBudget', e.target.value)} id="input-personal-budget" />
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 4 }}>{t('createPersonal.monthlyBudgetHint')}</p>
+        </div>
+
+        <hr className="divider" />
+
+        <div className="form-group">
+          <label className="form-label">{t('create.yourName')}</label>
+          <input className="form-input" placeholder={t('create.yourNamePlaceholder')} value={form.adminName} onChange={e => set('adminName', e.target.value)} id="input-personal-admin-name" />
+        </div>
+
+        <hr className="divider" />
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem', fontWeight: 600, marginBottom: 4 }}>{t('create.credSection')}</p>
+
+        <div className="form-group">
+          <label className="form-label">{t('create.email')}</label>
+          <input className="form-input" type="email" autoComplete="email" placeholder={t('create.emailPlaceholder')} value={form.email} onChange={e => set('email', e.target.value)} id="input-personal-email" />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{t('create.password')}</label>
+          <div style={{ position: 'relative' }}>
+            <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('create.passwordPlaceholder')} value={form.password} onChange={e => set('password', e.target.value)} id="input-personal-password" style={{ paddingRight: 50 }} />
+            <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label="Toggle password visibility" style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem', padding: 4 }}>
+              {showPassword ? '🙈' : '👁️'}
+            </button>
+          </div>
+        </div>
+        <div className="form-group">
+          <label className="form-label">{t('create.confirmPassword')}</label>
+          <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('create.confirmPasswordPlaceholder')} value={form.confirmPassword} onChange={e => set('confirmPassword', e.target.value)} id="input-personal-confirm-password" />
+          {form.password && form.confirmPassword && form.password !== form.confirmPassword && (
+            <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: 6 }}>{t('create.passwordsNoMatch')}</p>
+          )}
+          {form.password && form.confirmPassword && form.password === form.confirmPassword && (
+            <p style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 6 }}>{t('create.passwordsMatch')}</p>
+          )}
+        </div>
+
+        <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-personal-create" style={{ marginTop: 8 }}>
+          {loading ? t('createPersonal.creating') : t('createPersonal.submitBtn')}
+        </button>
+      </form>
+
+      <OrDivider />
+      <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: 12, lineHeight: 1.5 }}>
+        {t('createPersonal.googleHint')}
+      </p>
+      <GoogleAuthButton text="signup_with" onCredential={handleGoogleSignup} />
     </div>
   );
 }

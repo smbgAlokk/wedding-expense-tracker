@@ -85,11 +85,24 @@ function notifyNetworkError() {
   );
 }
 
+// Security audit M-15 (2026-05-28): the 401 interceptor used to hard-redirect
+// ANY 401 to '/', including 401s from the multi-wedding selector flow (where
+// the user has no session yet — the redirect just bounces them out of the
+// LandingPage's select-wedding mode and loses the toast that would have told
+// them why). Endpoints in this allow-list handle their own 401s in-place.
+const ENDPOINTS_THAT_HANDLE_OWN_401 = ['/auth/login/select-wedding'];
+function urlHandlesOwn401(url: string | undefined): boolean {
+  if (!url) return false;
+  return ENDPOINTS_THAT_HANDLE_OWN_401.some((endpoint) => url.endsWith(endpoint));
+}
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // 401 — expired/invalid session. Clear local auth and bounce to landing.
-    if (error.response?.status === 401) {
+    // 401 — expired/invalid session. Clear local auth and bounce to landing,
+    // UNLESS the failing endpoint is one that prefers to handle its own 401
+    // (e.g., the multi-wedding selector — see M-15 above).
+    if (error.response?.status === 401 && !urlHandlesOwn401(error.config?.url)) {
       localStorage.removeItem('wedding_token');
       localStorage.removeItem('wedding_member');
       localStorage.removeItem('wedding_data');
@@ -117,9 +130,18 @@ export const googleLogin = (data: Record<string, any>): Promise<AxiosResponse> =
 export const selectWedding = (data: Record<string, any>): Promise<AxiosResponse> => api.post('/auth/login/select-wedding', data);
 export const forgotPassword = (email: string): Promise<AxiosResponse> => api.post('/auth/forgot-password', { email });
 export const resetPassword = (token: string, password: string): Promise<AxiosResponse> => api.post('/auth/reset-password', { token, password });
+// H-5 (2026-05-28): email-verification flow. verifyEmail is called from the
+// /verify-email page with the token from the email link; resendVerification
+// is anti-enum (always returns generic success) so it can be triggered from a
+// "didn't get the email?" CTA without leaking account existence.
+export const verifyEmail = (token: string): Promise<AxiosResponse> => api.post('/auth/verify-email', { token });
+export const resendVerification = (email: string): Promise<AxiosResponse> => api.post('/auth/resend-verification', { email });
 
-// ============ Wedding APIs ============
+// ============ Workspace APIs (mounted under /weddings/ until Phase 0b rename) ============
 export const createWedding = (data: Record<string, any>): Promise<AxiosResponse> => api.post('/weddings', data);
+// Multi-vertical Phase 2 (2026-05-27): Personal-vertical create. Backend
+// auto-creates the lone owner member and skips join-code generation.
+export const createPersonalWorkspace = (data: Record<string, any>): Promise<AxiosResponse> => api.post('/weddings/personal', data);
 export const joinWedding = (data: Record<string, any>): Promise<AxiosResponse> => api.post('/weddings/join', data);
 export const getCurrentWedding = (): Promise<AxiosResponse> => api.get('/weddings/current');
 export const updateWedding = (data: Record<string, any>): Promise<AxiosResponse> => api.put('/weddings/current', data);
@@ -127,6 +149,10 @@ export const getWeddingMembers = (): Promise<AxiosResponse> => api.get('/wedding
 export const removeMember = (memberId: string): Promise<AxiosResponse> => api.delete(`/weddings/current/members/${memberId}`);
 
 // ============ Expense APIs ============
+//
+// Optional `from` / `to` ISO timestamps on the list + summary endpoints scope
+// the response to a date range. Personal-vertical uses this to show only the
+// selected calendar month; Wedding / Trip omit them and get lifetime totals.
 
 export const addExpense = (data: Record<string, any> | FormData, onUploadProgress?: (progressEvent: any) => void): Promise<AxiosResponse> => {
   const isFormData = data instanceof FormData;
@@ -137,8 +163,8 @@ export const addExpense = (data: Record<string, any> | FormData, onUploadProgres
   return api.post('/expenses', data, config);
 };
 export const getExpenses = (params?: Record<string, any>, signal?: AbortSignal): Promise<AxiosResponse> => api.get('/expenses', { params, signal });
-export const getMyExpenses = (signal?: AbortSignal): Promise<AxiosResponse> => api.get('/expenses/my', { signal });
-export const getExpenseSummary = (): Promise<AxiosResponse> => api.get('/expenses/summary');
+export const getMyExpenses = (params?: Record<string, any>, signal?: AbortSignal): Promise<AxiosResponse> => api.get('/expenses/my', { params, signal });
+export const getExpenseSummary = (params?: Record<string, any>): Promise<AxiosResponse> => api.get('/expenses/summary', { params });
 export const updateExpense = (id: string, data: Record<string, any>): Promise<AxiosResponse> => api.put(`/expenses/${id}`, data);
 export const deleteExpense = (id: string): Promise<AxiosResponse> => api.delete(`/expenses/${id}`);
 

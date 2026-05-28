@@ -6,6 +6,18 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
+// Production preflight (audit H-4 part B, 2026-05-28). Without SMTP the
+// password-reset flow either silently no-ops (after the H-4A fix) or — under
+// the previous behaviour — leaked raw reset URLs to stdout. Refuse to boot in
+// production rather than ship a known-vulnerable feature. Dev is unaffected.
+if (process.env.NODE_ENV === 'production') {
+  const missingSmtp = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS'].filter((k) => !process.env[k]);
+  if (missingSmtp.length) {
+    console.error(`[Preflight] FATAL: SMTP env vars missing in production: ${missingSmtp.join(', ')}. Refusing to start — password reset would fail closed.`);
+    process.exit(1);
+  }
+}
+
 const weddingRoutes = require('./routes/weddingRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const authRoutes = require('./routes/authRoutes');

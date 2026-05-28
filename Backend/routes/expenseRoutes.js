@@ -7,6 +7,7 @@ const Wedding = require('../models/Wedding');
 const Member = require('../models/Member');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { protect, adminOnly } = require('../middleware/auth');
+const { escapeRegexCapped } = require('../utils/regex');
 const {
   isConfigured: isCloudinaryConfigured,
   uploadToCloudinary,
@@ -34,6 +35,24 @@ const upload = multer({
     }
   },
 });
+
+// Parse the optional `from` + `to` ISO timestamps used by Personal-vertical
+// month scoping. Client sends the exact range it wants (computed from the
+// user's local-time month boundaries) so the server doesn't have to guess at
+// timezones. Returns a Mongo $gte/$lt filter or null. Defensive: invalid dates
+// are silently ignored — the caller falls back to the all-time query.
+function parseDateRange(fromStr, toStr) {
+  const filter = {};
+  if (fromStr && typeof fromStr === 'string') {
+    const from = new Date(fromStr);
+    if (!isNaN(from.getTime())) filter.$gte = from;
+  }
+  if (toStr && typeof toStr === 'string') {
+    const to = new Date(toStr);
+    if (!isNaN(to.getTime())) filter.$lt = to;
+  }
+  return Object.keys(filter).length ? filter : null;
+}
 
 // Wrap multer so we can return a clean JSON error instead of crashing
 const receiptUpload = (req, res, next) => {
@@ -149,10 +168,18 @@ router.post('/', protect, receiptUpload, asyncHandler(async (req, res) => {
  * Get all expenses for the wedding (protected)
  */
 router.get('/', protect, asyncHandler(async (req, res) => {
-  const { 
+  const {
     page = 1, limit = 50, category, memberId, sortBy = 'createdAt', order = 'desc',
-    searchCategory, searchDesc, searchMember
+    searchCategory, searchDesc, searchMember,
+    from, to                                       // optional date-range scoping (Personal monthly view)
   } = req.query;
+
+  // Pagination cap (audit Day 2, 2026-05-28). Without a server-side ceiling a
+  // single request can ask for every expense in the workspace, defeating the
+  // purpose of pagination and giving slow-loris callers an easy DB-pressure
+  // multiplier. Bounded to [1, 100]; legitimate UI never asks for more than 50.
+  const cappedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
+  const cappedPage = Math.max(parseInt(page, 10) || 1, 1);
 
   const query = { weddingId: req.weddingId };
 
@@ -160,19 +187,26 @@ router.get('/', protect, asyncHandler(async (req, res) => {
   if (category) query.category = category;
   if (memberId) query.memberId = memberId;
 
-  // Header column searches
+  // Optional createdAt range (Personal month scoping; Wedding/Trip ignore).
+  const dateRange = parseDateRange(from, to);
+  if (dateRange) query.createdAt = dateRange;
+
+  // Header column searches — user input MUST be regex-escaped and length-capped
+  // before flowing into a `$regex` clause (audit H-7, 2026-05-28). Raw input
+  // allows ReDoS via pathological patterns AND `.*`-style over-match across the
+  // whole tenant. escapeRegexCapped handles both.
   if (searchCategory) {
-    query.category = { $regex: searchCategory, $options: 'i' };
+    query.category = { $regex: escapeRegexCapped(searchCategory), $options: 'i' };
   }
   if (searchDesc) {
-    query.description = { $regex: searchDesc, $options: 'i' };
+    query.description = { $regex: escapeRegexCapped(searchDesc), $options: 'i' };
   }
-  
+
   if (searchMember) {
     // 1. Find members matching the name
-    const members = await Member.find({ 
-      weddingId: req.weddingId, 
-      name: { $regex: searchMember, $options: 'i' } 
+    const members = await Member.find({
+      weddingId: req.weddingId,
+      name: { $regex: escapeRegexCapped(searchMember), $options: 'i' }
     }).select('_id').lean();
     
     const memberIds = members.map(m => m._id);
@@ -187,7 +221,7 @@ router.get('/', protect, asyncHandler(async (req, res) => {
     }
   }
 
-  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const skip = (cappedPage - 1) * cappedLimit;
   const sortOrder = order === 'asc' ? 1 : -1;
   const validSortFields = ['createdAt', 'amount', 'category', 'description'];
   const actualSortBy = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
@@ -197,7 +231,7 @@ router.get('/', protect, asyncHandler(async (req, res) => {
       .populate('memberId', 'name relation role')
       .sort({ [actualSortBy]: sortOrder })
       .skip(skip)
-      .limit(parseInt(limit))
+      .limit(cappedLimit)
       .lean(),
     Expense.countDocuments(query)
   ]);
@@ -208,9 +242,9 @@ router.get('/', protect, asyncHandler(async (req, res) => {
       expenses,
       pagination: {
         total,
-        page: parseInt(page),
-        pages: Math.ceil(total / parseInt(limit)),
-        limit: parseInt(limit)
+        page: cappedPage,
+        pages: Math.ceil(total / cappedLimit),
+        limit: cappedLimit
       }
     }
   });
@@ -221,10 +255,15 @@ router.get('/', protect, asyncHandler(async (req, res) => {
  * Get current member's expenses (protected)
  */
 router.get('/my', protect, asyncHandler(async (req, res) => {
-  const expenses = await Expense.find({
+  const { from, to } = req.query;
+  const myQuery = {
     weddingId: req.weddingId,
-    memberId: req.member._id
-  })
+    memberId: req.member._id,
+  };
+  const dateRange = parseDateRange(from, to);
+  if (dateRange) myQuery.createdAt = dateRange;
+
+  const expenses = await Expense.find(myQuery)
     .sort({ createdAt: -1 })
     .lean();
 
@@ -246,10 +285,27 @@ router.get('/my', protect, asyncHandler(async (req, res) => {
  */
 router.get('/summary', protect, asyncHandler(async (req, res) => {
   const weddingId = new mongoose.Types.ObjectId(req.weddingId);
+  const { from, to } = req.query;
 
-  // Daily spending trend window (last 30 days)
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  // Optional createdAt range (Personal-vertical month scoping). When present,
+  // every aggregation below filters to the range so the dashboard reflects the
+  // month the user is viewing; when absent, the dashboard shows lifetime totals
+  // (the legacy Wedding/Trip behaviour).
+  const dateRange = parseDateRange(from, to);
+  const scopedMatch = dateRange
+    ? { weddingId, createdAt: dateRange }
+    : { weddingId };
+
+  // Daily-trend window: when month-scoped, mirror the selected range so the
+  // trend chart reflects the month; otherwise the legacy last-30-days window.
+  let trendMatch;
+  if (dateRange) {
+    trendMatch = { weddingId, createdAt: dateRange };
+  } else {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    trendMatch = { weddingId, createdAt: { $gte: thirtyDaysAgo } };
+  }
 
   // Every query below is independent — fire them concurrently so the dashboard
   // pays ONE network round-trip to Atlas instead of six sequential ones.
@@ -263,13 +319,13 @@ router.get('/summary', protect, asyncHandler(async (req, res) => {
   ] = await Promise.all([
     // Total expenses
     Expense.aggregate([
-      { $match: { weddingId } },
+      { $match: scopedMatch },
       { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
     ]),
 
     // Category breakdown
     Expense.aggregate([
-      { $match: { weddingId } },
+      { $match: scopedMatch },
       {
         $group: {
           _id: '$category',
@@ -282,7 +338,7 @@ router.get('/summary', protect, asyncHandler(async (req, res) => {
 
     // Member breakdown (top contributors)
     Expense.aggregate([
-      { $match: { weddingId } },
+      { $match: scopedMatch },
       {
         $group: {
           _id: '$memberId',
@@ -311,21 +367,16 @@ router.get('/summary', protect, asyncHandler(async (req, res) => {
       }
     ]),
 
-    // Recent expenses (last 10)
-    Expense.find({ weddingId: req.weddingId })
+    // Recent expenses (last 10) — same range scoping as above
+    Expense.find(dateRange ? { weddingId: req.weddingId, createdAt: dateRange } : { weddingId: req.weddingId })
       .populate('memberId', 'name relation')
       .sort({ createdAt: -1 })
       .limit(10)
       .lean(),
 
-    // Daily spending trend (last 30 days)
+    // Daily spending trend (last 30 days OR scoped month)
     Expense.aggregate([
-      {
-        $match: {
-          weddingId,
-          createdAt: { $gte: thirtyDaysAgo }
-        }
-      },
+      { $match: trendMatch },
       {
         $group: {
           _id: {

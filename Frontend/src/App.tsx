@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useWedding } from './context/WeddingContext';
 import LandingPage from './pages/LandingPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
 import Dashboard from './pages/Dashboard';
 import AddExpense from './pages/AddExpense';
 import MyExpenses from './pages/MyExpenses';
@@ -23,6 +24,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LandingPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/add" element={<ProtectedRoute><AddExpense /></ProtectedRoute>} />
         <Route path="/my-expenses" element={<ProtectedRoute><MyExpenses /></ProtectedRoute>} />

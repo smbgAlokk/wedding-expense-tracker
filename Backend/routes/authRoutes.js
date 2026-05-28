@@ -1,18 +1,42 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const validator = require('validator');
 const Member = require('../models/Member');
 const Wedding = require('../models/Wedding');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { generateToken } = require('../middleware/auth');
+const { generateToken, generateSelectorToken, verifySelectorToken } = require('../middleware/auth');
 const { verifyGoogleCredential } = require('../utils/googleVerify');
-const { sendPasswordResetEmail } = require('../utils/email');
+const { sendPasswordResetEmail, sendVerificationEmail } = require('../utils/email');
+const { mintEmailVerificationToken, hashToken: hashVerificationToken } = require('../utils/verificationToken');
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 const hashToken = (raw) => crypto.createHash('sha256').update(raw).digest('hex');
 const frontendBaseUrl = () =>
   (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim().replace(/\/$/, '');
+
+// ─── Brute-force lockout (Security audit H-2, 2026-05-28) ──────────────────
+//
+// Per-account lockout: 10 consecutive failed sign-ins on any Member doc
+// sharing the submitted email triggers a 15-minute cool-down. Counter resets
+// on success. Counters live on the Member doc itself (loginAttempts +
+// lockedUntil, both select:false) so the hot protect-middleware projection
+// stays untouched — only /login pays the cost of pulling them in.
+//
+// Anti-enumeration: when the email yields zero Member docs, we still run a
+// real bcrypt.compare against ANTI_ENUM_HASH so unknown-email and
+// wrong-password paths take similar wall-clock time. Closes the L-7 timing
+// oracle for free (no separate audit row needed).
+//
+// The lockout response is 429 with a deliberately vague message. The 10th
+// failure itself still returns 401 (matching the previous 9 responses) — the
+// 429 only fires on attempt 11+ while the lock is hot. This keeps the
+// off-by-one threshold opaque: attackers can't probe for the exact failure
+// count that triggers the switch.
+const MAX_LOGIN_ATTEMPTS = 10;
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
+const ANTI_ENUM_HASH = bcrypt.hashSync('do-not-match-anyone-anti-enum', 12);
 
 /**
  * POST /api/auth/login
@@ -35,20 +59,40 @@ router.post('/login', asyncHandler(async (req, res) => {
     });
   }
 
-  // Find member with this email (include password for comparison).
-  // A user can have accounts in multiple weddings — find all of them.
-  // Note: we deliberately do NOT filter by authProvider. A member who created
-  // their account locally may later link Google; their password must still work.
-  // comparePassword() returns false for members without a password (Google-only),
-  // so those are correctly rejected.
+  // Find member with this email (include password + lockout counters for the
+  // brute-force check below). A user can have accounts in multiple weddings —
+  // find all of them. We deliberately do NOT filter by authProvider: a member
+  // who created their account locally may later link Google; their password
+  // must still work. comparePassword() returns false for members without a
+  // password (Google-only), so those are correctly rejected.
   const members = await Member.find({
     email: email.toLowerCase().trim()
-  }).select('+password').populate('weddingId');
+  }).select('+password +loginAttempts +lockedUntil').populate('weddingId');
 
+  // Anti-enumeration: when no member exists for this email, still burn a
+  // real bcrypt.compare so the unknown-email path takes ~the same wall-clock
+  // time as a wrong-password path. Without this, an attacker can probe which
+  // emails have accounts by measuring response latency.
   if (!members || members.length === 0) {
+    await bcrypt.compare(password, ANTI_ENUM_HASH);
     return res.status(401).json({
       success: false,
       message: 'Incorrect email or password. Please try again.'
+    });
+  }
+
+  // Lockout check — runs BEFORE any comparePassword so a hot lock costs zero
+  // bcrypt CPU. If ANY Member doc sharing this email is locked, the email is
+  // locked as a unit (they all share one password; cracking any one is
+  // equivalent to cracking the rest). Generic 429 with no countdown — we do
+  // not leak whether the lock is hot vs the password just happened to be
+  // wrong, and we do not reveal the exact threshold.
+  const now = new Date();
+  const isLocked = members.some((m) => m.lockedUntil && m.lockedUntil > now);
+  if (isLocked) {
+    return res.status(429).json({
+      success: false,
+      message: 'Too many failed sign-in attempts. Please try again later.'
     });
   }
 
@@ -64,10 +108,39 @@ router.post('/login', asyncHandler(async (req, res) => {
   }
 
   if (!matchedMember) {
+    // Increment the failure counter on EVERY member doc sharing this email.
+    // Each one that reaches MAX_LOGIN_ATTEMPTS gets stamped with a fresh
+    // lockedUntil and its counter reset to 0 — so the next 10 failures past
+    // the unlock window earn the next lockout cleanly.
+    //
+    // Returning 401 (not 429) on the exact attempt that triggers the lock
+    // keeps the threshold opaque: the response shape is identical for
+    // attempts 1..MAX, and only attempt MAX+1 (and later, while the lock is
+    // hot) flips to 429. validateBeforeSave:false skips unrelated validators
+    // so a doc with a legacy quirk doesn't block the counter update.
+    for (const m of members) {
+      m.loginAttempts = (m.loginAttempts || 0) + 1;
+      if (m.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+        m.lockedUntil = new Date(Date.now() + LOCKOUT_WINDOW_MS);
+        m.loginAttempts = 0;
+      }
+      await m.save({ validateBeforeSave: false });
+    }
     return res.status(401).json({
       success: false,
       message: 'Incorrect email or password. Please try again.'
     });
+  }
+
+  // Success path: reset lockout state on every member sharing this email.
+  // They locked as a unit; they unlock as a unit. Skipped if already clean
+  // to avoid pointless writes on the steady-state happy path.
+  for (const m of members) {
+    if ((m.loginAttempts && m.loginAttempts > 0) || m.lockedUntil) {
+      m.loginAttempts = 0;
+      m.lockedUntil = undefined;
+      await m.save({ validateBeforeSave: false });
+    }
   }
 
   // If member was deactivated (removed from wedding), reactivate them
@@ -103,13 +176,24 @@ router.post('/login', asyncHandler(async (req, res) => {
     }
 
     if (activeWeddings.length > 1) {
+      // Security audit C-1 + H-1 (2026-05-28): mint a short-lived purpose-bound
+      // selector token so /select-wedding can verify the request actually
+      // followed a successful password check, and strip joinCode from the
+      // response — the joinCode is the only thing protecting unauthenticated
+      // joins; leaking every workspace's code to anyone who can guess one
+      // password is an unnecessary trust expansion. See §14 in MASTER_CONTEXT.
+      const selectorToken = generateSelectorToken(
+        matchedMember.email,
+        activeWeddings.map((w) => w.memberId)
+      );
       return res.status(200).json({
         success: true,
         message: 'Multiple weddings found. Please select one.',
         data: {
           multipleWeddings: true,
-          weddings: activeWeddings,
-          email: matchedMember.email
+          weddings: activeWeddings.map(({ joinCode: _joinCode, ...rest }) => rest),
+          email: matchedMember.email,
+          selectorToken,
         }
       });
     }
@@ -128,15 +212,54 @@ router.post('/login', asyncHandler(async (req, res) => {
 
 /**
  * POST /api/auth/login/select-wedding
- * When user has multiple weddings, select which one to enter
+ *
+ * Security audit C-1 (2026-05-28): this endpoint used to accept a bare
+ * `memberId` from the request body and mint a session token for it, with no
+ * proof that the caller had actually authenticated. Any member who could
+ * discover another member's `_id` (e.g., via the protected
+ * `GET /current/members` endpoint after joining a workspace) could trade it
+ * for a JWT and impersonate them — including the admin. Single-request
+ * workspace takeover. Severity: critical.
+ *
+ * The fix wires this endpoint to a short-lived selector token minted by
+ * `/login` or `/google` whenever those endpoints resolve to multiple weddings.
+ * The selector token (a) proves the caller passed password/Google verification
+ * in the last 5 minutes, (b) embeds an allowlist of memberIds the caller is
+ * permitted to select. Without the token, the endpoint returns 401; with a
+ * valid token, the requested memberId is checked against the allowlist before
+ * any session is issued.
  */
 router.post('/login/select-wedding', asyncHandler(async (req, res) => {
-  const { memberId } = req.body;
+  const { memberId, selectorToken } = req.body;
 
-  if (!memberId) {
+  if (!memberId || typeof memberId !== 'string') {
     return res.status(400).json({
       success: false,
       message: 'Please select a wedding'
+    });
+  }
+
+  // Verify the selector token. verifySelectorToken throws with a tagged
+  // statusCode on missing/expired/tampered tokens — uniform 401 response
+  // regardless of which failure mode triggered (no information leak).
+  let payload;
+  try {
+    payload = verifySelectorToken(selectorToken);
+  } catch (err) {
+    return res.status(err.statusCode || 401).json({
+      success: false,
+      message: err.message || 'Your sign-in session expired. Please sign in again.'
+    });
+  }
+
+  // Confirm the requested memberId is one this selector token authorised.
+  // Without this, a stolen selector token would still be limited to its
+  // original member set — but a single compromised payload could otherwise
+  // be replayed against any memberId until the 5-min window closed.
+  if (!payload.members.includes(String(memberId))) {
+    return res.status(403).json({
+      success: false,
+      message: 'Invalid wedding selection.'
     });
   }
 
@@ -146,6 +269,16 @@ router.post('/login/select-wedding', asyncHandler(async (req, res) => {
     return res.status(404).json({
       success: false,
       message: 'Wedding not found'
+    });
+  }
+
+  // Defence in depth: the selector token's `sub` (email) must match the
+  // member's email. If a member's email was changed between login and
+  // select-wedding (admin action, etc.), the original selector becomes void.
+  if (member.email && payload.sub && member.email.toLowerCase() !== String(payload.sub).toLowerCase()) {
+    return res.status(403).json({
+      success: false,
+      message: 'Invalid wedding selection.'
     });
   }
 
@@ -204,17 +337,30 @@ router.post('/google', asyncHandler(async (req, res) => {
       // both methods, so their password login continues to work.
       if (!m.googleId) { m.googleId = googleId; dirty = true; }
       if (picture && !m.avatar) { m.avatar = picture; dirty = true; }
+      // H-5 (2026-05-28): Google's verifyIdToken already enforces
+      // email_verified=true (see utils/googleVerify.js), so any successful
+      // Google sign-in is by definition proof of email control. Stamp the
+      // verified-at field on first Google login if the member predated H-5
+      // or signed up via password and never clicked the verification link.
+      if (!m.emailVerifiedAt) { m.emailVerifiedAt = new Date(); dirty = true; }
       if (dirty) await m.save();
     }
 
     if (existingMembers.length > 1) {
+      // Security audit C-1 + H-1 (2026-05-28): same protections as /login —
+      // joinCode is NOT shipped to the client; a selector token gates the
+      // subsequent /select-wedding call.
       const activeWeddings = existingMembers.map(m => ({
         memberId: m._id,
         weddingId: m.weddingId._id,
         weddingName: m.weddingId.weddingName,
         role: m.role,
-        joinCode: m.weddingId.joinCode
       }));
+
+      const selectorToken = generateSelectorToken(
+        email,
+        activeWeddings.map((w) => w.memberId)
+      );
 
       return res.status(200).json({
         success: true,
@@ -222,7 +368,8 @@ router.post('/google', asyncHandler(async (req, res) => {
         data: {
           multipleWeddings: true,
           weddings: activeWeddings,
-          email
+          email,
+          selectorToken,
         }
       });
     }
@@ -262,7 +409,11 @@ router.post('/google', asyncHandler(async (req, res) => {
       authProvider: 'google',
       googleId,
       avatar: picture || '',
-      role: 'member'
+      role: 'member',
+      // H-5 (2026-05-28): Google's verifyIdToken enforces email_verified=true
+      // upstream, so a member created from a Google sign-in already proved
+      // email control. Skip the verification email entirely for this path.
+      emailVerifiedAt: new Date(),
     });
 
     const token = generateToken(member._id);
@@ -371,14 +522,36 @@ router.post('/reset-password', asyncHandler(async (req, res) => {
     });
   }
 
+  // H-5 gate (2026-05-28): refuse to complete a password reset when the
+  // member's email isn't verified. Closes the squat-then-recover attack:
+  // attacker registers victim@x.com, never verifies; victim signs up later,
+  // can't reset until they prove email control via the verification flow
+  // (which is itself a separate email-click). The verify-email link arrives
+  // at the same address as this reset link, so a legitimate owner who
+  // controls the inbox can complete both flows easily. Returns 403 (not 400)
+  // to distinguish from "bad token" — the client can render a specific CTA
+  // pointing the user at /resend-verification.
+  if (!member.emailVerifiedAt) {
+    return res.status(403).json({
+      success: false,
+      message: 'Please verify your email before resetting your password. We can resend the verification link.',
+      code: 'EMAIL_NOT_VERIFIED'
+    });
+  }
+
   // Apply the new password to every password-holding account with this email
-  // (multi-wedding consistency), and clear all reset tokens.
+  // (multi-wedding consistency), and clear all reset tokens. H-5 defence in
+  // depth: also stamp emailVerifiedAt on every same-email member — clicking
+  // through a reset link is itself proof of email control, so any member
+  // doc that somehow ended up unverified gets cleaned up here.
   const sameEmailMembers = await Member.find({ email: member.email }).select('+password');
+  const now = new Date();
   for (const m of sameEmailMembers) {
     if (m.password || m._id.equals(member._id)) {
       m.password = password; // pre-save hook hashes it
       m.resetPasswordToken = undefined;
       m.resetPasswordExpires = undefined;
+      if (!m.emailVerifiedAt) m.emailVerifiedAt = now;
       await m.save();
     }
   }
@@ -387,6 +560,100 @@ router.post('/reset-password', asyncHandler(async (req, res) => {
     success: true,
     message: 'Your password has been reset. You can now log in.'
   });
+}));
+
+/**
+ * POST /api/auth/verify-email
+ * Complete an email-verification flow using the token from the email link.
+ * Marks every Member doc sharing this email as verified (multi-wedding
+ * consistency — one human, multiple workspaces, all unlocked together).
+ * Generic-message responses match the rest of the auth surface; we don't
+ * leak whether the token was malformed vs expired vs unknown.
+ */
+router.post('/verify-email', asyncHandler(async (req, res) => {
+  const { token } = req.body;
+
+  if (!token || typeof token !== 'string') {
+    return res.status(400).json({
+      success: false,
+      message: 'This verification link is invalid or has expired. Please request a new one.'
+    });
+  }
+
+  const tokenHash = hashVerificationToken(token);
+  const member = await Member.findOne({
+    emailVerificationToken: tokenHash,
+    emailVerificationExpires: { $gt: new Date() }
+  }).select('+emailVerificationToken +emailVerificationExpires');
+
+  if (!member || !member.email) {
+    return res.status(400).json({
+      success: false,
+      message: 'This verification link is invalid or has expired. Please request a new one.'
+    });
+  }
+
+  const sameEmailMembers = await Member.find({ email: member.email })
+    .select('+emailVerificationToken +emailVerificationExpires');
+  const now = new Date();
+  for (const m of sameEmailMembers) {
+    if (!m.emailVerifiedAt) m.emailVerifiedAt = now;
+    m.emailVerificationToken = undefined;
+    m.emailVerificationExpires = undefined;
+    await m.save({ validateBeforeSave: false });
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: 'Your email is verified. You can now use all features.'
+  });
+}));
+
+/**
+ * POST /api/auth/resend-verification
+ * Re-send the verification link. Anti-enumeration generic response: the
+ * caller cannot distinguish "no such email" from "email already verified"
+ * from "fresh link sent." Falls under the /auth-strict global rate-limit
+ * bucket (30 / 15 min) so it can't be used as a free email-pump.
+ */
+router.post('/resend-verification', asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  const generic = () => res.status(200).json({
+    success: true,
+    message: 'If an account exists for this email and is not yet verified, a verification link has been sent.'
+  });
+
+  if (!email || typeof email !== 'string' || !validator.isEmail(email)) {
+    return generic();
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+  const members = await Member.find({ email: normalizedEmail });
+  const unverified = members.filter((m) => m.email && !m.emailVerifiedAt);
+
+  if (unverified.length === 0) {
+    return generic();
+  }
+
+  // One raw token, stored hashed on every unverified same-email member so
+  // a single verify click clears every workspace.
+  const { rawToken, tokenHash, expiresAt } = mintEmailVerificationToken();
+  for (const m of unverified) {
+    m.emailVerificationToken = tokenHash;
+    m.emailVerificationExpires = expiresAt;
+    await m.save({ validateBeforeSave: false });
+  }
+
+  const verifyUrl = `${frontendBaseUrl()}/verify-email?token=${rawToken}`;
+  try {
+    await sendVerificationEmail(normalizedEmail, verifyUrl, unverified[0].name);
+  } catch (err) {
+    // Token is already stored; never leak whether sending succeeded.
+    console.error('[resend-verification] email send failed:', err.message);
+  }
+
+  return generic();
 }));
 
 module.exports = router;

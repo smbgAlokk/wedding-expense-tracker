@@ -17,7 +17,7 @@ const ACCEPT_STRING = 'image/jpeg,image/png,image/webp,image/heic,image/heif';
 
 export default function AddExpense() {
   const navigate = useNavigate();
-  const { wedding, member, refreshSummary, refreshWedding } = useWedding();
+  const { wedding, member, features, refreshSummary, refreshWedding } = useWedding();
   const { t, tCat, tServer } = useLang();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
@@ -318,13 +318,18 @@ export default function AddExpense() {
               id="input-description" maxLength={200} autoComplete="off"
             />
           </div>
-          <div className="form-group">
-            <label className="form-label">{t('add.paidBy')}</label>
-            <input className="form-input" placeholder={member?.name} value={form.paidBy}
-              onChange={e => set('paidBy', e.target.value)} onKeyDown={handleDetailKeyDown}
-              id="input-paid-by" maxLength={100} autoComplete="name"
-            />
-          </div>
+          {/* "Paid by" only matters when expenses can be paid by people other
+              than the logged-in member. Single-member verticals (Personal) hide
+              the field — the owner pays for everything by definition. */}
+          {features.multiMember && (
+            <div className="form-group">
+              <label className="form-label">{t('add.paidBy')}</label>
+              <input className="form-input" placeholder={member?.name} value={form.paidBy}
+                onChange={e => set('paidBy', e.target.value)} onKeyDown={handleDetailKeyDown}
+                id="input-paid-by" maxLength={100} autoComplete="name"
+              />
+            </div>
+          )}
           <div className="form-group">
             <label className="form-label">{t('add.vendor')}</label>
             <input className="form-input" placeholder={t('add.vendorPlaceholder')} value={form.vendor}

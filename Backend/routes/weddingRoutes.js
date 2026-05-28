@@ -1,4 +1,6 @@
 const express = require('express');
+const mongoose = require('mongoose');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const validator = require('validator');
 const Wedding = require('../models/Wedding');
@@ -6,13 +8,35 @@ const Member = require('../models/Member');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { protect, adminOnly, generateToken } = require('../middleware/auth');
 const { verifyGoogleCredential } = require('../utils/googleVerify');
+const { escapeRegex } = require('../utils/regex');
+const { sendVerificationEmail } = require('../utils/email');
+const { mintEmailVerificationToken } = require('../utils/verificationToken');
+
+// Local copy of authRoutes.js's frontendBaseUrl helper. Both files build URLs
+// off FRONTEND_URL (comma-separated list — first entry wins, trailing slash
+// stripped) for emailed links. Kept in sync deliberately; the duplication is
+// 1 line and avoids a fragile cross-route import.
+const frontendBaseUrl = () =>
+  (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim().replace(/\/$/, '');
+
+// Stricter than the global authLimiter (audit H-3, 2026-05-28). Signups are
+// infrequent legitimate actions — disposable signup spam is the primary abuse
+// vector (bcrypt-rounds-12 CPU burn + Atlas storage exhaustion). 10/hour per
+// IP is roomy for one human + their phone but cuts botnet throughput by ~20x.
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many signup attempts. Please try again in an hour.' },
+});
 
 /**
  * POST /api/weddings
  * Create a new wedding (public - anyone can create)
  * Now requires email + password for the admin creator
  */
-router.post('/', asyncHandler(async (req, res) => {
+router.post('/', signupLimiter, asyncHandler(async (req, res) => {
   const { weddingName, partner1, partner2, weddingDate, totalBudget, currency, adminName, adminRelation, adminPhone, email, password, confirmPassword, googleCredential } = req.body;
 
   // Validate required wedding fields
@@ -93,38 +117,68 @@ router.post('/', asyncHandler(async (req, res) => {
     adminPassword = password;
   }
 
-  // Create the wedding
-  const wedding = await Wedding.create({
-    weddingName: weddingName.trim(),
-    coupleNames: {
-      partner1: partner1.trim(),
-      partner2: partner2.trim()
-    },
-    weddingDate: new Date(weddingDate),
-    totalBudget: totalBudget || 0,
-    currency: currency || '₹'
-  });
+  // H-5 (2026-05-28): pre-mint verification token for the local-auth path so
+  // the hash + expiry land inside the Member.create payload (one DB write
+  // instead of a follow-up save). Google-auth admins skip verification —
+  // googleVerify already enforces email_verified=true upstream.
+  const verification = adminAuthProvider === 'local' ? mintEmailVerificationToken() : null;
 
-  // Create the admin member (password for local, googleId/avatar for Google)
-  const admin = await Member.create({
-    weddingId: wedding._id,
-    name: adminName.trim(),
-    email: adminEmail,
-    ...(adminPassword ? { password: adminPassword } : {}),
-    authProvider: adminAuthProvider,
-    ...(adminGoogleId ? { googleId: adminGoogleId } : {}),
-    ...(adminAvatar ? { avatar: adminAvatar } : {}),
-    relation: adminRelation || 'Organizer',
-    phone: adminPhone || '',
-    role: 'admin'
-  });
+  // Audit M-5 (2026-05-28): atomic workspace+admin creation. The three writes
+  // (Wedding.create → Member.create → wedding.save) used to run as separate
+  // awaits — if step 2 or 3 failed, an orphan Wedding with no createdBy stuck
+  // around forever. Atlas is a replica set, so Mongoose transactions work.
+  let wedding, admin;
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      [wedding] = await Wedding.create([{
+        weddingName: weddingName.trim(),
+        coupleNames: {
+          partner1: partner1.trim(),
+          partner2: partner2.trim()
+        },
+        weddingDate: new Date(weddingDate),
+        totalBudget: totalBudget || 0,
+        currency: currency || '₹'
+      }], { session });
 
-  // Link admin to wedding
-  wedding.createdBy = admin._id;
-  await wedding.save();
+      [admin] = await Member.create([{
+        weddingId: wedding._id,
+        name: adminName.trim(),
+        email: adminEmail,
+        ...(adminPassword ? { password: adminPassword } : {}),
+        authProvider: adminAuthProvider,
+        ...(adminGoogleId ? { googleId: adminGoogleId } : {}),
+        ...(adminAvatar ? { avatar: adminAvatar } : {}),
+        relation: adminRelation || 'Organizer',
+        phone: adminPhone || '',
+        role: 'admin',
+        ...(adminAuthProvider === 'google'
+          ? { emailVerifiedAt: new Date() }
+          : { emailVerificationToken: verification.tokenHash, emailVerificationExpires: verification.expiresAt }),
+      }], { session });
 
-  // Generate token for admin
+      wedding.createdBy = admin._id;
+      await wedding.save({ session });
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  // Generate token for admin (outside the transaction — token issuance has no
+  // database side-effect to roll back).
   const token = generateToken(admin._id);
+
+  // H-5: send the verification email fire-and-forget AFTER the transaction
+  // commits. We never block signup response on SMTP latency, and we never
+  // send for a transaction that may roll back. Failure is logged + ignored —
+  // the user can resend via /api/auth/resend-verification.
+  if (verification) {
+    const verifyUrl = `${frontendBaseUrl()}/verify-email?token=${verification.rawToken}`;
+    sendVerificationEmail(adminEmail, verifyUrl, admin.name).catch((err) => {
+      console.error('[wedding-create] verification email send failed:', err.message);
+    });
+  }
 
   res.status(201).json({
     success: true,
@@ -134,6 +188,148 @@ router.post('/', asyncHandler(async (req, res) => {
       member: admin,
       token,
       joinCode: wedding.joinCode
+    }
+  });
+}));
+
+/**
+ * POST /api/weddings/personal
+ * Create a Personal-vertical workspace (single-user monthly budget). No
+ * join code, no co-owners — the signed-up user becomes the sole admin and
+ * the only member of the workspace.
+ *
+ * Multi-vertical Phase 2 (2026-05-27). Sits under /api/weddings/ because
+ * Phase 0b (the route-level rename to /api/workspaces/) is deferred — see
+ * MASTER_CONTEXT.md §9.6 Phase 0b. The Wedding model is the underlying
+ * storage container; `type: 'personal'` selects the personal feature set.
+ */
+router.post('/personal', signupLimiter, asyncHandler(async (req, res) => {
+  const {
+    name,                // optional — workspace name shown in UI (defaults to "<adminName>'s Budget")
+    monthlyBudget,       // optional — defaults to 0
+    currency,            // optional — defaults to ₹
+    adminName,
+    email,
+    password,
+    confirmPassword,
+    googleCredential,
+  } = req.body;
+
+  if (!adminName || typeof adminName !== 'string' || !adminName.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide your name to create your personal budget'
+    });
+  }
+
+  // Resolve the owner's identity — Google or email+password. Same shape as the
+  // wedding-create route so the frontend can share validation messages.
+  let ownerEmail;
+  let ownerPassword;
+  let ownerAuthProvider = 'local';
+  let ownerGoogleId;
+  let ownerAvatar;
+
+  if (googleCredential) {
+    let googleUser;
+    try {
+      googleUser = await verifyGoogleCredential(googleCredential);
+    } catch (err) {
+      return res.status(err.statusCode || 401).json({
+        success: false,
+        message: err.message
+      });
+    }
+    ownerEmail = googleUser.email;
+    ownerAuthProvider = 'google';
+    ownerGoogleId = googleUser.googleId;
+    ownerAvatar = googleUser.picture;
+  } else {
+    if (!email || typeof email !== 'string' || !validator.isEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email address'
+      });
+    }
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
+      });
+    }
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Passwords do not match'
+      });
+    }
+    ownerEmail = email.toLowerCase().trim();
+    ownerPassword = password;
+  }
+
+  const trimmedAdminName = adminName.trim();
+  const workspaceName = (typeof name === 'string' && name.trim())
+    ? name.trim()
+    : `${trimmedAdminName}'s Budget`;
+
+  // H-5 (2026-05-28): pre-mint verification token for local-auth signups.
+  // Google-auth owners are auto-verified (googleVerify enforces email_verified
+  // upstream).
+  const verification = ownerAuthProvider === 'local' ? mintEmailVerificationToken() : null;
+
+  // Audit M-5 (2026-05-28): same atomic workspace+owner creation pattern as
+  // /api/weddings — three writes wrapped in a single transaction so a failure
+  // mid-flow doesn't leave an orphan Personal workspace.
+  let workspace, owner;
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      [workspace] = await Wedding.create([{
+        type: 'personal',
+        weddingName: workspaceName,
+        totalBudget: Math.max(0, Number(monthlyBudget) || 0),
+        currency: currency || '₹',
+      }], { session });
+
+      [owner] = await Member.create([{
+        weddingId: workspace._id,
+        name: trimmedAdminName,
+        email: ownerEmail,
+        ...(ownerPassword ? { password: ownerPassword } : {}),
+        authProvider: ownerAuthProvider,
+        ...(ownerGoogleId ? { googleId: ownerGoogleId } : {}),
+        ...(ownerAvatar ? { avatar: ownerAvatar } : {}),
+        relation: 'Owner',
+        role: 'admin',
+        ...(ownerAuthProvider === 'google'
+          ? { emailVerifiedAt: new Date() }
+          : { emailVerificationToken: verification.tokenHash, emailVerificationExpires: verification.expiresAt }),
+      }], { session });
+
+      workspace.createdBy = owner._id;
+      await workspace.save({ session });
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  const token = generateToken(owner._id);
+
+  // H-5: fire-and-forget verification email after the transaction commits.
+  if (verification) {
+    const verifyUrl = `${frontendBaseUrl()}/verify-email?token=${verification.rawToken}`;
+    sendVerificationEmail(ownerEmail, verifyUrl, owner.name).catch((err) => {
+      console.error('[personal-create] verification email send failed:', err.message);
+    });
+  }
+
+  res.status(201).json({
+    success: true,
+    message: 'Your personal budget is ready!',
+    data: {
+      wedding: workspace,
+      member: owner,
+      token,
     }
   });
 }));
@@ -168,9 +364,9 @@ router.post('/join', asyncHandler(async (req, res) => {
   }
 
   // Check if a member with the same name already exists (even if removed).
-  // The name is matched LITERALLY — escaped, never interpolated as a raw regex.
-  // A raw regex would allow injection / ReDoS and matching arbitrary members.
-  const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // The name is matched LITERALLY — escaped via the shared utility, never
+  // interpolated as a raw regex. A raw regex would allow injection / ReDoS
+  // and matching arbitrary members.
   const existingMember = await Member.findOne({
     weddingId: wedding._id,
     name: { $regex: new RegExp(`^${escapeRegex(trimmedName)}$`, 'i') }

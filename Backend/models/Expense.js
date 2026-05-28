@@ -39,6 +39,7 @@ const expenseSchema = new mongoose.Schema({
   paidBy: {
     type: String,
     trim: true,
+    maxlength: [100, 'Paid-by name cannot exceed 100 characters'], // audit M-9 (2026-05-28)
     default: ''
   },
   vendor: {

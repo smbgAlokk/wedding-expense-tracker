@@ -60,7 +60,15 @@ async function sendPasswordResetEmail(to, resetUrl, name) {
   </div>`;
 
   if (!isEmailConfigured()) {
-    console.warn('[Email] SMTP not configured. Password reset link (dev only):\n  ' + resetUrl);
+    // Audit H-4 (2026-05-28): never log the raw reset URL in production. The
+    // URL carries a one-shot hijack token; leaking it to Railway / log
+    // aggregators is functionally equivalent to publishing the token. Dev
+    // keeps the convenience log so the flow stays testable without SMTP.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[Email] CRITICAL: SMTP not configured in production. Password reset email NOT sent.');
+    } else {
+      console.warn('[Email] SMTP not configured (dev only). Password reset link:\n  ' + resetUrl);
+    }
     return { sent: false };
   }
 
@@ -68,4 +76,49 @@ async function sendPasswordResetEmail(to, resetUrl, name) {
   return { sent: true };
 }
 
-module.exports = { sendPasswordResetEmail, isEmailConfigured };
+/**
+ * Send an email-verification link (Security audit H-5, 2026-05-28). Mirrors
+ * sendPasswordResetEmail: when SMTP isn't configured, the link is logged in
+ * dev / CRITICAL'd in prod (the boot-time SMTP preflight from H-4B means
+ * production cannot actually reach the unconfigured branch). 24 h validity
+ * communicated in the copy so users aren't surprised by expired links.
+ * Returns { sent: boolean }.
+ */
+async function sendVerificationEmail(to, verifyUrl, name) {
+  const safeName = escapeHtml(name || 'there');
+  const subject = 'Verify your Wedding Expense Tracker email';
+  const text =
+    `Hi ${name || 'there'},\n\n` +
+    `Welcome! Please confirm this email address by opening the link below. ` +
+    `This link expires in 24 hours.\n\n${verifyUrl}\n\n` +
+    `If you didn't sign up, you can safely ignore this email.`;
+
+  const html = `
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1f1316">
+    <div style="text-align:center;font-size:40px">💌</div>
+    <h2 style="text-align:center;color:#D84381;margin:8px 0 16px">Verify your email</h2>
+    <p>Hi ${safeName},</p>
+    <p>Welcome to Wedding Expense Tracker! Please confirm this email address by tapping the button below. This link expires in <strong>24 hours</strong>.</p>
+    <p style="text-align:center;margin:28px 0">
+      <a href="${verifyUrl}" style="background:#D84381;color:#fff;text-decoration:none;padding:12px 28px;border-radius:999px;font-weight:600;display:inline-block">Verify email</a>
+    </p>
+    <p style="font-size:13px;color:#666">If the button doesn't work, copy this link into your browser:<br>
+      <a href="${verifyUrl}" style="color:#D84381;word-break:break-all">${verifyUrl}</a>
+    </p>
+    <p style="font-size:13px;color:#666">If you didn't sign up for Wedding Expense Tracker, you can safely ignore this email.</p>
+  </div>`;
+
+  if (!isEmailConfigured()) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[Email] CRITICAL: SMTP not configured in production. Verification email NOT sent.');
+    } else {
+      console.warn('[Email] SMTP not configured (dev only). Verification link:\n  ' + verifyUrl);
+    }
+    return { sent: false };
+  }
+
+  await getTransporter().sendMail({ from: SMTP_FROM, to, subject, text, html });
+  return { sent: true };
+}
+
+module.exports = { sendPasswordResetEmail, sendVerificationEmail, isEmailConfigured };
