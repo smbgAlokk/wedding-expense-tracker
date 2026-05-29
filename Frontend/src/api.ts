@@ -165,7 +165,199 @@ export const addExpense = (data: Record<string, any> | FormData, onUploadProgres
 export const getExpenses = (params?: Record<string, any>, signal?: AbortSignal): Promise<AxiosResponse> => api.get('/expenses', { params, signal });
 export const getMyExpenses = (params?: Record<string, any>, signal?: AbortSignal): Promise<AxiosResponse> => api.get('/expenses/my', { params, signal });
 export const getExpenseSummary = (params?: Record<string, any>): Promise<AxiosResponse> => api.get('/expenses/summary', { params });
+
+// L1 + L2 — Analytics endpoint for the /insights page. One round-trip
+// returns: KPIs + categoryBreakdown + vendorBreakdown + trend + day-of-week
+// histogram (L1), plus prev-period comparison data + recurring-candidate
+// vendors (L2). The server auto-selects daily vs monthly granularity based
+// on span when omitted (≤ 92 days → day, else month).
+export const getAnalytics = (
+  params: {
+    from: string;
+    to: string;
+    granularity?: 'day' | 'month';
+    /** L2 — previous-period bounds for month-over-month rules. Both required to populate `data.prev`. */
+    prevFrom?: string;
+    prevTo?: string;
+  },
+  signal?: AbortSignal,
+): Promise<AxiosResponse> => api.get('/expenses/analytics', { params, signal });
+
 export const updateExpense = (id: string, data: Record<string, any>): Promise<AxiosResponse> => api.put(`/expenses/${id}`, data);
 export const deleteExpense = (id: string): Promise<AxiosResponse> => api.delete(`/expenses/${id}`);
+
+// ── L3 — AI Coach ────────────────────────────────────────────────────────
+//
+// Cheap state endpoints (status / enable / disable / waitlist) use the
+// regular axios instance so they pick up the auth interceptor + retry logic.
+// The streaming /coach endpoint uses raw `fetch()` instead because:
+//   1. axios doesn't natively support response streaming in the browser
+//   2. SSE is text/event-stream, which axios mishandles by default
+//   3. AbortController + ReadableStream is the modern standard for this
+export const getAICoachStatus = (): Promise<AxiosResponse> => api.get('/ai/coach/status');
+export const enableAICoach = (): Promise<AxiosResponse> => api.post('/ai/coach/enable');
+export const disableAICoach = (): Promise<AxiosResponse> => api.post('/ai/coach/disable');
+export const joinAIWaitlist = (): Promise<AxiosResponse> => api.post('/ai/coach/waitlist');
+
+/**
+ * Stream a coach reply via SSE. The caller passes a question + the current
+ * Insights analytics payload + the user's language; we return a small
+ * controller object that emits parsed events through callbacks.
+ *
+ * Lifecycle:
+ *   • onChunk(text)  — fired for each Gemini text delta
+ *   • onError(code, message) — fired ONCE before onDone if upstream failed
+ *   • onDone(meta)   — always fires last; `meta` includes streamed/aborted
+ *
+ * Cancellation: caller invokes returned `abort()` to stop the stream early.
+ * Server-side, the request handler watches `req.on('close')` and aborts the
+ * upstream Gemini call so we don't keep paying for tokens nobody reads.
+ *
+ * Auth: we mirror axios's `Authorization: Bearer <token>` header by reading
+ * the same `wedding_token` localStorage key that the axios interceptor uses,
+ * so SSE requests carry the JWT without a separate auth flow.
+ */
+export interface CoachStreamHandlers {
+  onChunk: (text: string) => void;
+  onMeta?: (meta: any) => void;
+  /**
+   * Error callback. `code` is a stable identifier (e.g. UPSTREAM_RATE_LIMITED)
+   * that the UI maps to a localized message. `retryAfterSec`, when present,
+   * is Google's own retry hint — the UI can offer a "try again in N s" timer
+   * keyed off it.
+   */
+  onError?: (code: string, message: string, retryAfterSec?: number | null) => void;
+  onDone?: (meta: { ok: boolean; streamed?: boolean; aborted?: boolean }) => void;
+}
+export interface CoachStreamHandle {
+  abort: () => void;
+  done: Promise<void>;
+}
+export function streamCoachReply(
+  body: { question: string; analytics: any; lang: 'en' | 'hi' },
+  handlers: CoachStreamHandlers,
+): CoachStreamHandle {
+  const controller = new AbortController();
+
+  // Resolve the same API base axios uses (env override → '/api' fallback).
+  // We can't introspect axios.defaults.baseURL reliably across SSR/test
+  // environments, so we re-derive from the same VITE_API_URL signal.
+  const base =
+    (import.meta as any).env?.VITE_API_URL ||
+    (typeof window !== 'undefined' ? '/api' : '/api');
+
+  const token = (() => {
+    try { return window.localStorage.getItem('wedding_token') || ''; } catch { return ''; }
+  })();
+
+  const done = (async () => {
+    let response: Response;
+    try {
+      response = await fetch(`${base}/ai/coach`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        handlers.onError?.('NETWORK', err?.message || 'network', null);
+      }
+      handlers.onDone?.({ ok: false, aborted: err?.name === 'AbortError' });
+      return;
+    }
+
+    // Non-2xx → server sent a JSON error body, not SSE. Parse + surface.
+    if (!response.ok) {
+      let code = 'HTTP_ERROR';
+      let message = `HTTP ${response.status}`;
+      let retryAfterSec: number | null = null;
+      try {
+        const payload = await response.json();
+        code = payload.code || code;
+        message = payload.message || message;
+        retryAfterSec = payload.retryAfterSec ?? null;
+      } catch {
+        // Body wasn't JSON — keep the generic message.
+      }
+      handlers.onError?.(code, message, retryAfterSec);
+      handlers.onDone?.({ ok: false });
+      return;
+    }
+
+    if (!response.body) {
+      handlers.onError?.('NO_BODY', 'Empty response body');
+      handlers.onDone?.({ ok: false });
+      return;
+    }
+
+    // Parse SSE on the fly. Spec: events are blank-line separated; each
+    // event has `event:` + `data:` lines. We accumulate `data` lines per
+    // event so multi-line payloads work, then dispatch on blank line.
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let currentEvent = 'message';
+    let currentData = '';
+
+    const dispatch = () => {
+      const event = currentEvent;
+      const dataRaw = currentData;
+      currentEvent = 'message';
+      currentData = '';
+      if (!dataRaw) return;
+      let parsed: any = null;
+      try { parsed = JSON.parse(dataRaw); } catch { parsed = { text: dataRaw }; }
+      if (event === 'chunk') {
+        handlers.onChunk(parsed?.text || '');
+      } else if (event === 'meta') {
+        handlers.onMeta?.(parsed);
+      } else if (event === 'error') {
+        handlers.onError?.(parsed?.code || 'STREAM_ERROR', parsed?.message || 'Stream error', parsed?.retryAfterSec ?? null);
+      } else if (event === 'done') {
+        handlers.onDone?.({ ok: !!parsed?.ok, streamed: !!parsed?.streamed, aborted: !!parsed?.aborted });
+      }
+    };
+
+    try {
+      while (true) {
+        const { done: readerDone, value } = await reader.read();
+        if (readerDone) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Split into complete events on blank lines (\n\n or \r\n\r\n).
+        let sep: number;
+        while ((sep = buffer.search(/\r?\n\r?\n/)) !== -1) {
+          const raw = buffer.slice(0, sep);
+          buffer = buffer.slice(sep + (buffer[sep] === '\r' ? 4 : 2));
+          for (const line of raw.split(/\r?\n/)) {
+            if (!line) continue;
+            const colon = line.indexOf(':');
+            if (colon < 0) continue;
+            const field = line.slice(0, colon).trim();
+            // Per SSE spec the first space after `:` is optional & stripped.
+            const value = line.slice(colon + 1).replace(/^ /, '');
+            if (field === 'event') currentEvent = value;
+            else if (field === 'data') currentData += (currentData ? '\n' : '') + value;
+          }
+          dispatch();
+        }
+      }
+      // Drain any trailing event without a final \n\n.
+      if (currentData) dispatch();
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        handlers.onError?.('READ_ERROR', err?.message || 'read error', null);
+      }
+      handlers.onDone?.({ ok: false, aborted: err?.name === 'AbortError' });
+    }
+  })();
+
+  return { abort: () => controller.abort(), done };
+}
 
 export default api;

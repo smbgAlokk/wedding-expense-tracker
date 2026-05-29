@@ -470,7 +470,7 @@ router.get('/current', protect, asyncHandler(async (req, res) => {
  * Update wedding details (admin only)
  */
 router.put('/current', protect, adminOnly, asyncHandler(async (req, res) => {
-  const { weddingName, partner1, partner2, weddingDate, totalBudget, currency, categories } = req.body;
+  const { weddingName, partner1, partner2, weddingDate, totalBudget, currency, categories, payDay, budgetAllocation } = req.body;
 
   const wedding = await Wedding.findById(req.weddingId);
 
@@ -488,6 +488,65 @@ router.put('/current', protect, adminOnly, asyncHandler(async (req, res) => {
   if (totalBudget !== undefined) wedding.totalBudget = totalBudget;
   if (currency) wedding.currency = currency;
   if (categories) wedding.categories = categories;
+
+  // L0 — Budget allocation (Need/Want/Saving target percentages). Same
+  // monthly-budget guard pattern as `payDay`. The Mongoose subdoc validator
+  // also enforces sum===100 + integer values, but we pre-validate here so
+  // the user gets a clean 400 with a specific message instead of a generic
+  // Mongoose ValidationError.
+  if (budgetAllocation !== undefined && budgetAllocation !== null) {
+    const { getFeatures } = require('../constants/workspaceDefaults');
+    if (!getFeatures(wedding.type).monthlyBudget) {
+      return res.status(400).json({
+        success: false,
+        message: 'Budget allocation can only be set on a monthly-budget workspace',
+      });
+    }
+    if (typeof budgetAllocation !== 'object') {
+      return res.status(400).json({
+        success: false,
+        message: 'Budget allocation must be an object with need, want, saving percentages',
+      });
+    }
+    const need = Number(budgetAllocation.need);
+    const want = Number(budgetAllocation.want);
+    const saving = Number(budgetAllocation.saving);
+    const allInts = Number.isInteger(need) && Number.isInteger(want) && Number.isInteger(saving);
+    const inRange = [need, want, saving].every((n) => n >= 0 && n <= 100);
+    if (!allInts || !inRange || (need + want + saving) !== 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Budget allocation must be integer percentages between 0 and 100 that sum to exactly 100',
+      });
+    }
+    wedding.budgetAllocation = { need, want, saving };
+  }
+
+  // Pay day — only meaningful for monthly-budget verticals (Personal). Reject
+  // attempts to set it on wedding/trip workspaces so the field can never carry
+  // surprising state. `null`/`''` clears the setting; the Mongoose validator
+  // catches non-integer / out-of-range values as a 400 via the global handler.
+  if (payDay !== undefined) {
+    if (payDay === null || payDay === '') {
+      wedding.payDay = null;
+    } else {
+      const { getFeatures } = require('../constants/workspaceDefaults');
+      if (!getFeatures(wedding.type).monthlyBudget) {
+        return res.status(400).json({
+          success: false,
+          message: 'Pay day can only be set on a monthly-budget workspace',
+        });
+      }
+      const n = Number(payDay);
+      if (!Number.isInteger(n) || n < 1 || n > 31) {
+        return res.status(400).json({
+          success: false,
+          message: 'Pay day must be an integer between 1 and 31',
+        });
+      }
+      wedding.payDay = n;
+    }
+  }
 
   await wedding.save();
 

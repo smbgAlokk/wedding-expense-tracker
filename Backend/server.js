@@ -18,9 +18,19 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
+// L3 — AI Coach preflight. Unlike SMTP (which is required for password
+// reset, a critical-path feature), the AI Coach is opt-in and Personal-only,
+// so a missing GEMINI_API_KEY is NOT fatal — the /api/ai routes return a
+// graceful 503 and the frontend shows an "AI Coach unavailable" placeholder.
+// We log a clear warning at boot so the operator knows to set the key.
+if (!process.env.GEMINI_API_KEY || String(process.env.GEMINI_API_KEY).trim() === '') {
+  console.warn('[Preflight] WARNING: GEMINI_API_KEY not set. AI Coach endpoints will return 503 until configured.');
+}
+
 const weddingRoutes = require('./routes/weddingRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const authRoutes = require('./routes/authRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 const { errorHandler } = require('./middleware/errorHandler');
 const { mongoSanitize } = require('./middleware/sanitize');
 
@@ -120,6 +130,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/weddings', weddingRoutes);
 app.use('/api/expenses', expenseRoutes);
+app.use('/api/ai', aiRoutes);
 
 // ===========================================
 // 404 Handler

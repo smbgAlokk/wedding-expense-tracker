@@ -93,6 +93,41 @@ const memberSchema = new mongoose.Schema({
     type: Date,
     select: false
   },
+  // ── L3 — AI Coach (Gemini Flash) ─────────────────────────────────────
+  // All three fields are SELECTABLE because the frontend reads them on the
+  // /coach/status endpoint to gate UI state (enable flag, daily/monthly
+  // usage, waitlist join status). None are sensitive — `aiCoachEnabled` is
+  // a yes/no preference, `aiUsage` is a counter, `aiWaitlistJoined` is a
+  // single boolean. No tokens, no secrets.
+  //
+  // Default OFF — every user must explicitly opt in via the consent modal
+  // in Settings. The route layer enforces this; this default is the safety
+  // net for forged or out-of-band Member documents.
+  aiCoachEnabled: {
+    type: Boolean,
+    default: false,
+  },
+  // Per-user rate-limit counters. Two windows tracked independently so the
+  // user can burn their daily allowance without locking themselves out of
+  // the entire month. Date-reset logic lives in middleware/aiQuota.js — the
+  // schema just stores the latest values.
+  aiUsage: {
+    daily: {
+      date: { type: String, default: '' },   // 'YYYY-MM-DD' in server-local TZ
+      count: { type: Number, default: 0, min: 0 },
+    },
+    monthly: {
+      month: { type: String, default: '' },  // 'YYYY-MM'
+      count: { type: Number, default: 0, min: 0 },
+    },
+  },
+  // Set true when a user hits their quota and joins the Pro waitlist. No
+  // billing in v1 — this is a marketing signal + a future flag for paid
+  // unlock. Doesn't affect quota enforcement.
+  aiWaitlistJoined: {
+    type: Boolean,
+    default: false,
+  },
   relation: {
     type: String,
     trim: true,

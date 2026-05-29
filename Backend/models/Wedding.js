@@ -3,6 +3,8 @@ const crypto = require('crypto');
 const {
   WORKSPACE_TYPES,
   DEFAULT_WORKSPACE_TYPE,
+  BUDGET_BUCKETS,
+  DEFAULT_BUDGET_ALLOCATION,
   getDefaultCategories,
   getFeatures,
 } = require('../constants/workspaceDefaults');
@@ -59,6 +61,20 @@ const weddingSchema = new mongoose.Schema({
     default: '₹',
     enum: ['₹', '$', '€', '£', '¥']
   },
+  // Personal-vertical (or any monthly-budget vertical) optional anchor for
+  // pay-cycle reporting. When set, the dashboard surfaces a "Until next
+  // payday" runway tile alongside the calendar-month metrics — calendar
+  // reporting stays the source of truth; this just adds cashflow visibility.
+  // A value of 31 in a 30-day month is clamped client-side to the last day,
+  // matching the convention used by subscription billers (Netflix, Spotify).
+  payDay: {
+    type: Number,
+    default: null,
+    validate: {
+      validator: (v) => v == null || (Number.isInteger(v) && v >= 1 && v <= 31),
+      message: 'Pay day must be an integer between 1 and 31',
+    },
+  },
   // Audit M-8 (2026-05-28): cap category name length AND array size so an
   // admin can't DoS the database (or the wire) with a categories payload
   // containing thousands of multi-kilobyte names. 50 is well above the 20
@@ -68,10 +84,39 @@ const weddingSchema = new mongoose.Schema({
       name: { type: String, required: true, trim: true, maxlength: [60, 'Category name cannot exceed 60 characters'] },
       icon: { type: String, default: '📦', maxlength: [8, 'Category icon must be a single emoji'] },
       budgetLimit: { type: Number, default: 0, min: 0 },
+      // L0 — Need / Want / Saving bucket. Only meaningful for monthly-budget
+      // verticals (Personal); Wedding/Trip categories save `undefined` and
+      // the UI gates don't read it for those types. Defaults intentionally
+      // omitted at the schema level so legacy documents (pre-L0) keep their
+      // existing categories without forcing a write — the resolver in the
+      // routes / frontend falls back to 'want' for any undefined value.
+      bucket: { type: String, enum: BUDGET_BUCKETS, default: undefined },
     }],
     validate: {
       validator: (arr) => Array.isArray(arr) && arr.length <= 50,
       message: 'A workspace cannot have more than 50 categories',
+    },
+  },
+  // L0 — Need / Want / Saving target allocation. Sum must === 100. Only
+  // meaningful for monthly-budget verticals; left at default for Wedding/Trip
+  // (they ignore it in the UI). Stored as integer percentages to avoid
+  // floating-point sum-to-100 drift; the validator below catches any drift.
+  budgetAllocation: {
+    type: new mongoose.Schema({
+      need:   { type: Number, default: DEFAULT_BUDGET_ALLOCATION.need,   min: 0, max: 100 },
+      want:   { type: Number, default: DEFAULT_BUDGET_ALLOCATION.want,   min: 0, max: 100 },
+      saving: { type: Number, default: DEFAULT_BUDGET_ALLOCATION.saving, min: 0, max: 100 },
+    }, { _id: false }),
+    default: () => ({ ...DEFAULT_BUDGET_ALLOCATION }),
+    validate: {
+      // Integer-only + must sum exactly to 100. Mongoose runs this on the
+      // SubdocPath as a whole so we get one clean error instead of three.
+      validator: (v) => v
+        && Number.isInteger(v.need)
+        && Number.isInteger(v.want)
+        && Number.isInteger(v.saving)
+        && (v.need + v.want + v.saving) === 100,
+      message: 'Budget allocation must be integer percentages that sum to exactly 100',
     },
   },
   createdBy: {

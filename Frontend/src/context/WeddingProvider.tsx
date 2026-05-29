@@ -11,6 +11,7 @@ import { DEFAULT_WORKSPACE_TYPE } from '../types';
 import { getFeaturesByType } from '../constants/defaultCategories';
 import { useLang } from './LanguageContext';
 import { WeddingContext, type WeddingContextType } from './WeddingContext';
+import { cacheInvalidate } from '../utils/dataCache';
 
 const VISIBILITY_REFRESH_THROTTLE_MS = 15_000;
 
@@ -54,6 +55,10 @@ export function WeddingProvider({ children }: WeddingProviderProps) {
     setWedding(null);
     setSummary(null);
     setMembers([]);
+    // Wipe every cached view on logout — on a shared device, the next
+    // user must never see leftover analytics / AI quota state from the
+    // previous session.
+    cacheInvalidate();
   }, []);
 
   const refreshWedding = useCallback(async () => {

@@ -2,6 +2,7 @@ import { useEffect, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLang } from '../context/LanguageContext';
 import { fmtSimple, fmtDate } from '../utils/format';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import ReceiptViewer from './ReceiptViewer';
 
 /**
@@ -49,29 +50,16 @@ export default function ExpenseDetailSheet({
     if (e.key === 'Escape' && !viewerOpen) onClose();
   }, [onClose, viewerOpen]);
 
+  // Body scroll-lock: extracted to a shared hook so the smooth-scroll bypass
+  // (see Frontend/src/hooks/useBodyScrollLock.ts) is applied consistently
+  // wherever the app locks the body — and nested locks (e.g. ReceiptViewer
+  // opening on top of this sheet) unwind cleanly.
+  useBodyScrollLock(!!expense);
+
   useEffect(() => {
     if (!expense) return;
-
     document.addEventListener('keydown', handleKey);
-
-    // Lock background scroll — save current position for restoration
-    const scrollY = window.scrollY;
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.left = '0';
-    document.body.style.right = '0';
-    document.body.style.overflow = 'hidden';
-
-    return () => {
-      document.removeEventListener('keydown', handleKey);
-      // Restore scroll position
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.left = '';
-      document.body.style.right = '';
-      document.body.style.overflow = '';
-      window.scrollTo(0, scrollY);
-    };
+    return () => document.removeEventListener('keydown', handleKey);
   }, [expense, handleKey]);
 
   if (!expense) return null;

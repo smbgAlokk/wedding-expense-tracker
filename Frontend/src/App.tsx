@@ -9,6 +9,7 @@ import MyExpenses from './pages/MyExpenses';
 import AllExpenses from './pages/AllExpenses';
 import Members from './pages/Members';
 import Settings from './pages/Settings';
+import Insights from './pages/Insights';
 import BottomNav from './components/BottomNav';
 
 function ProtectedRoute({ children }) {
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/my-expenses" element={<ProtectedRoute><MyExpenses /></ProtectedRoute>} />
         <Route path="/all-expenses" element={<ProtectedRoute><AllExpenses /></ProtectedRoute>} />
         <Route path="/members" element={<ProtectedRoute><Members /></ProtectedRoute>} />
+        <Route path="/insights" element={<ProtectedRoute><Insights /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

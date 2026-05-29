@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { useLang } from '../context/LanguageContext';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 5;
@@ -235,7 +236,13 @@ export default function ReceiptViewer({ url, filename = 'receipt', onClose }) {
     }
   }, [downloadUrl, filename, t]);
 
-  // ─── Body scroll lock + ESC + initial measure on image load ─────────────
+  // Body scroll-lock — extracted to a shared hook so the smooth-scroll bypass
+  // (see Frontend/src/hooks/useBodyScrollLock.ts) is applied here too, and so
+  // a nested invocation over an already-locked body (this viewer opens on top
+  // of ExpenseDetailSheet) unwinds cleanly via the hook's prev-styles snapshot.
+  useBodyScrollLock(!!url);
+
+  // ─── ESC + zoom hotkeys + resize-aware re-measure ────────────────────────
   useEffect(() => {
     if (!url) return;
 
@@ -247,20 +254,6 @@ export default function ReceiptViewer({ url, filename = 'receipt', onClose }) {
     };
     document.addEventListener('keydown', onKey);
 
-    const scrollY = window.scrollY;
-    const prev = {
-      position: document.body.style.position,
-      top: document.body.style.top,
-      left: document.body.style.left,
-      right: document.body.style.right,
-      overflow: document.body.style.overflow,
-    };
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.left = '0';
-    document.body.style.right = '0';
-    document.body.style.overflow = 'hidden';
-
     const onResize = () => measure();
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', onResize);
@@ -269,8 +262,6 @@ export default function ReceiptViewer({ url, filename = 'receipt', onClose }) {
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onResize);
       window.removeEventListener('orientationchange', onResize);
-      Object.assign(document.body.style, prev);
-      window.scrollTo(0, scrollY);
     };
   }, [url, onClose, measure, reset, setScaleSafe]);
 
