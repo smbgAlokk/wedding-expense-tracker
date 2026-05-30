@@ -1,3 +1,6 @@
+const { logger } = require('../utils/logger');
+const { captureError } = require('../config/sentry');
+
 /**
  * Global error handler middleware
  * Provides user-friendly error messages
@@ -37,7 +40,16 @@ const errorHandler = (err, req, res, next) => {
     message = 'Session expired. Please rejoin.';
   }
 
-  console.error(`[ERROR] ${statusCode} - ${message}`, err.stack);
+  // M-14: only log full stacks for real failures (>=500); expected 4xx are
+  // logged at debug to cut noise. Use the per-request logger (correlation id)
+  // when available, else the base logger. 5xx are also captured to Sentry.
+  const log = (req && req.log) || logger;
+  if (statusCode >= 500) {
+    log.error({ err, statusCode }, message);
+    captureError(err);
+  } else {
+    log.debug({ statusCode, message }, 'handled client error');
+  }
 
   res.status(statusCode).json({
     success: false,

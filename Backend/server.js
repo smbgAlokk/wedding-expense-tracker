@@ -2,22 +2,21 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
-const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-// Production preflight (audit H-4 part B, 2026-05-28). Without SMTP the
-// password-reset flow either silently no-ops (after the H-4A fix) or — under
-// the previous behaviour — leaked raw reset URLs to stdout. Refuse to boot in
-// production rather than ship a known-vulnerable feature. Dev is unaffected.
-if (process.env.NODE_ENV === 'production') {
-  const missingSmtp = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS'].filter((k) => !process.env[k]);
-  if (missingSmtp.length) {
-    console.error(`[Preflight] FATAL: SMTP env vars missing in production: ${missingSmtp.join(', ')}. Refusing to start — password reset would fail closed.`);
-    process.exit(1);
-  }
-}
+const { logger } = require('./utils/logger');
+const pinoHttp = require('pino-http');
+const crypto = require('crypto');
+const { checkEnv, checkJoinCodeIndex } = require('./config/preflight');
+const { initSentry, captureError } = require('./config/sentry');
+
+// Boot-time preflight (audit P-2, §14.G): refuse to start in production if any
+// required secret is missing (supersedes the old SMTP-only check). initSentry
+// is DSN-gated — a no-op unless SENTRY_DSN is set.
+checkEnv();
+initSentry();
 
 // L3 — AI Coach preflight. Unlike SMTP (which is required for password
 // reset, a critical-path feature), the AI Coach is opt-in and Personal-only,
@@ -41,8 +40,15 @@ const app = express();
 // Behind a reverse proxy (Railway / Vercel). Without this, express-rate-limit
 // and req.ip see the proxy's IP instead of the real client — breaking rate
 // limiting (everyone shares one bucket, or X-Forwarded-For can be spoofed).
-// `1` trusts a single proxy hop, which is what these platforms provide.
-app.set('trust proxy', 1);
+// M-6 (§14.G): hop count configurable via TRUST_PROXY (default 1 = Railway; the
+// Vercel→Railway proxy path may warrant 2). Accepts a number, 'true', 'false'.
+app.set('trust proxy', (() => {
+  const tp = process.env.TRUST_PROXY;
+  if (tp === undefined || tp === '') return 1;
+  if (tp === 'true') return true;
+  if (tp === 'false') return false;
+  return Number(tp);
+})());
 
 // ===========================================
 // Security Middleware
@@ -124,11 +130,17 @@ app.use(mongoSanitize);
 app.use(csrfProtect);
 
 // ===========================================
-// Logging
+// Logging — structured JSON via pino + per-request correlation id (L-2)
 // ===========================================
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-}
+app.use(pinoHttp({
+  logger,
+  genReqId: (req, res) => {
+    const id = req.headers['x-request-id'] || crypto.randomUUID();
+    res.setHeader('X-Request-Id', id);
+    return id;
+  },
+  autoLogging: { ignore: (req) => req.url === '/api/health' },
+}));
 
 // ===========================================
 // Health Check
@@ -137,8 +149,7 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Wedding Expense Tracker API is running',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -149,6 +160,15 @@ app.use('/api/auth', authRoutes);
 app.use('/api/weddings', weddingRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/ai', aiRoutes);
+
+// CSP violation report sink (M-3 / P-9, §14.G). The browser POSTs violation
+// reports here (wired via report-uri in vercel.json). CSRF-exempt.
+app.post('/api/csp-report',
+  express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '64kb' }),
+  (req, res) => {
+    logger.warn({ cspReport: req.body }, 'CSP violation');
+    res.status(204).end();
+  });
 
 // ===========================================
 // 404 Handler
@@ -172,21 +192,22 @@ const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/wedding-expense-tracker';
 
 mongoose.connect(MONGODB_URI)
-  .then(() => {
-    console.log('✅ Connected to MongoDB');
+  .then(async () => {
+    logger.info('Connected to MongoDB');
+    await checkJoinCodeIndex(); // P-3 (§14.G)
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+      logger.info({ port: PORT, env: process.env.NODE_ENV || 'development' }, 'Server running');
     });
   })
   .catch((err) => {
-    console.error('❌ MongoDB connection error:', err.message);
+    logger.error({ err: err.message }, 'MongoDB connection error');
     process.exit(1);
   });
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
-  console.error('UNHANDLED REJECTION:', err);
+  logger.error({ err }, 'UNHANDLED REJECTION');
+  captureError(err);
   // Don't crash in production, just log
   if (process.env.NODE_ENV !== 'production') {
     process.exit(1);

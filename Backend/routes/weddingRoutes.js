@@ -12,6 +12,7 @@ const { verifyTurnstile } = require('../utils/turnstile');
 const { escapeRegex } = require('../utils/regex');
 const { sendVerificationEmail } = require('../utils/email');
 const { mintEmailVerificationToken } = require('../utils/verificationToken');
+const { recordAudit } = require('../utils/audit');
 
 // Local copy of authRoutes.js's frontendBaseUrl helper. Both files build URLs
 // off FRONTEND_URL (comma-separated list — first entry wins, trailing slash
@@ -567,6 +568,8 @@ router.put('/current', protect, adminOnly, asyncHandler(async (req, res) => {
 
   await wedding.save();
 
+  recordAudit(req, 'wedding.update', { meta: { fields: Object.keys(req.body || {}) } });
+
   res.status(200).json({
     success: true,
     message: 'Wedding details updated',
@@ -616,6 +619,8 @@ router.delete('/current/members/:memberId', protect, adminOnly, asyncHandler(asy
 
   member.isActive = false;
   await member.save();
+
+  recordAudit(req, 'member.remove', { target: String(member._id), meta: { name: member.name } });
 
   res.status(200).json({
     success: true,

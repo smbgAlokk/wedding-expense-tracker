@@ -21,6 +21,7 @@ const {
 } = require('../middleware/auth');
 const { verifyGoogleCredential } = require('../utils/googleVerify');
 const { verifyTurnstile } = require('../utils/turnstile');
+const { recordAudit } = require('../utils/audit');
 const { sendPasswordResetEmail, sendVerificationEmail } = require('../utils/email');
 const { mintEmailVerificationToken, hashToken: hashVerificationToken } = require('../utils/verificationToken');
 
@@ -758,6 +759,7 @@ router.post('/logout', asyncHandler(async (req, res) => {
  */
 router.post('/logout-all', protect, asyncHandler(async (req, res) => {
   await revokeAllForMember(req.member._id);
+  recordAudit(req, 'auth.logout_all', {});
   clearSessionCookies(res);
   return res.status(200).json({ success: true, message: 'Signed out of all devices.' });
 }));
