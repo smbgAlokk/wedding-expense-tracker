@@ -151,6 +151,13 @@ const memberSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  // A-3 (§14.H): permanent ban, distinct from isActive (which is soft-delete +
+  // re-entry). A banned member can never re-join or log back in — enforced in
+  // protect + every entry path (join / login / google / select-wedding).
+  bannedAt: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true,

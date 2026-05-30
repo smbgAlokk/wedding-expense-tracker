@@ -6,13 +6,14 @@ const validator = require('validator');
 const Wedding = require('../models/Wedding');
 const Member = require('../models/Member');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { protect, adminOnly, issueSession } = require('../middleware/auth');
+const { protect, issueSession, loadWorkspace, requireAction } = require('../middleware/auth');
 const { verifyGoogleCredential } = require('../utils/googleVerify');
 const { verifyTurnstile } = require('../utils/turnstile');
 const { escapeRegex } = require('../utils/regex');
 const { sendVerificationEmail } = require('../utils/email');
 const { mintEmailVerificationToken } = require('../utils/verificationToken');
 const { recordAudit } = require('../utils/audit');
+const { tenantFilter } = require('../utils/tenantQuery');
 
 // Local copy of authRoutes.js's frontendBaseUrl helper. Both files build URLs
 // off FRONTEND_URL (comma-separated list — first entry wins, trailing slash
@@ -393,6 +394,15 @@ router.post('/join', asyncHandler(async (req, res) => {
   }).select('+password');
 
   if (existingMember) {
+    // A-3 (§14.H): a permanently-banned member can never re-join, regardless of
+    // credentials or name match.
+    if (existingMember.bannedAt) {
+      return res.status(403).json({
+        success: false,
+        message: 'This account can no longer join this wedding.'
+      });
+    }
+
     // SECURITY: frictionless name-based re-entry is ONLY for passwordless
     // members. Otherwise anyone holding the (widely shared) join code could
     // impersonate a credentialed user — including the admin — just by typing
@@ -487,17 +497,12 @@ router.get('/current', protect, asyncHandler(async (req, res) => {
  * PUT /api/weddings/current
  * Update wedding details (admin only)
  */
-router.put('/current', protect, adminOnly, asyncHandler(async (req, res) => {
+router.put('/current', protect, loadWorkspace, requireAction('wedding.update'), asyncHandler(async (req, res) => {
   const { weddingName, partner1, partner2, weddingDate, totalBudget, currency, categories, payDay, budgetAllocation } = req.body;
 
-  const wedding = await Wedding.findById(req.weddingId);
-
-  if (!wedding) {
-    return res.status(404).json({
-      success: false,
-      message: 'Wedding not found'
-    });
-  }
+  // A-1/A-2 (§14.H): authorization via requireAction(canAct); the workspace was
+  // already fetched by loadWorkspace, so no per-route refetch (helps M-13).
+  const wedding = req.workspace;
 
   if (weddingName) wedding.weddingName = weddingName.trim();
   if (partner1) wedding.coupleNames.partner1 = partner1.trim();
@@ -582,10 +587,8 @@ router.put('/current', protect, adminOnly, asyncHandler(async (req, res) => {
  * Get all members of the wedding (protected)
  */
 router.get('/current/members', protect, asyncHandler(async (req, res) => {
-  const members = await Member.find({
-    weddingId: req.weddingId,
-    isActive: true
-  }).sort({ role: 1, createdAt: 1 });
+  const members = await Member.find(tenantFilter(req.weddingId, { isActive: true }))
+    .sort({ role: 1, createdAt: 1 });
 
   res.status(200).json({
     success: true,
@@ -597,11 +600,8 @@ router.get('/current/members', protect, asyncHandler(async (req, res) => {
  * DELETE /api/weddings/current/members/:memberId
  * Remove a member (admin only)
  */
-router.delete('/current/members/:memberId', protect, adminOnly, asyncHandler(async (req, res) => {
-  const member = await Member.findOne({
-    _id: req.params.memberId,
-    weddingId: req.weddingId
-  });
+router.delete('/current/members/:memberId', protect, requireAction('member.remove'), asyncHandler(async (req, res) => {
+  const member = await Member.findOne(tenantFilter(req.weddingId, { _id: req.params.memberId }));
 
   if (!member) {
     return res.status(404).json({
@@ -617,14 +617,18 @@ router.delete('/current/members/:memberId', protect, adminOnly, asyncHandler(asy
     });
   }
 
+  // A-3 (§14.H): `{ ban: true }` permanently bans (blocks all future re-entry),
+  // versus the default soft-delete the member could undo by re-joining.
+  const ban = req.body && (req.body.ban === true || req.body.ban === 'true');
   member.isActive = false;
+  if (ban) member.bannedAt = new Date();
   await member.save();
 
-  recordAudit(req, 'member.remove', { target: String(member._id), meta: { name: member.name } });
+  recordAudit(req, ban ? 'member.ban' : 'member.remove', { target: String(member._id), meta: { name: member.name, banned: ban } });
 
   res.status(200).json({
     success: true,
-    message: `${member.name} has been removed`
+    message: ban ? `${member.name} has been removed and banned` : `${member.name} has been removed`
   });
 }));
 

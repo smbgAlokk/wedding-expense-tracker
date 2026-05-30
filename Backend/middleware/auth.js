@@ -2,7 +2,9 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const Member = require('../models/Member');
 const RefreshToken = require('../models/RefreshToken');
+const Wedding = require('../models/Wedding');
 const { hashToken } = require('../utils/verificationToken');
+const { canAct } = require('../utils/authz');
 
 // ─── Cookie / token lifetimes (Security audit C-2 full migration, §14.F) ────
 //
@@ -85,13 +87,21 @@ const protect = async (req, res, next) => {
     //  • select only the fields downstream code actually reads
     //  • .lean() — skip Mongoose document hydration (we never .save() req.member)
     const member = await Member.findById(decoded.id)
-      .select('name role isActive weddingId')
+      .select('name role isActive weddingId bannedAt')
       .lean();
 
     if (!member) {
       return res.status(401).json({
         success: false,
         message: 'This member no longer exists'
+      });
+    }
+
+    // A-3 (§14.H): a permanently-banned member's existing session dies here.
+    if (member.bannedAt) {
+      return res.status(401).json({
+        success: false,
+        message: 'Your access has been permanently revoked.'
       });
     }
 
@@ -134,6 +144,35 @@ const adminOnly = (req, res, next) => {
       success: false,
       message: 'Only the wedding admin can perform this action'
     });
+  }
+  next();
+};
+
+/**
+ * loadWorkspace (A-2, §14.H) — fetch the member's workspace once and expose it
+ * as req.workspace / req.features so routes don't each re-query it (helps M-13).
+ * Use after protect on routes that need workspace context.
+ */
+const loadWorkspace = async (req, res, next) => {
+  try {
+    const wedding = await Wedding.findById(req.weddingId);
+    if (!wedding) {
+      return res.status(404).json({ success: false, message: 'Workspace not found' });
+    }
+    req.workspace = wedding;
+    req.features = wedding.features;
+    next();
+  } catch (err) { next(err); }
+};
+
+/**
+ * requireAction (A-1, §14.H) — central authorization gate via canAct(), replacing
+ * scattered ad-hoc role checks. Use after protect (+ loadWorkspace when the
+ * action needs workspace context).
+ */
+const requireAction = (action) => (req, res, next) => {
+  if (!canAct(req.member, req.workspace, action)) {
+    return res.status(403).json({ success: false, message: 'You do not have permission to perform this action' });
   }
   next();
 };
@@ -339,6 +378,8 @@ const verifySelectorToken = (token) => {
 module.exports = {
   protect,
   adminOnly,
+  loadWorkspace,
+  requireAction,
   generateToken,
   generateAccessToken,
   generateSelectorToken,

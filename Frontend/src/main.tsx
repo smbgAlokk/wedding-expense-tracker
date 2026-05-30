@@ -7,6 +7,10 @@ import { LanguageProvider } from './context/LanguageProvider'
 import { AICoachProvider } from './context/AICoachProvider'
 import App from './App'
 import './index.css'
+import { initSentry } from './sentry'
+
+// Error monitoring — no-op unless VITE_SENTRY_DSN is set (§14.G).
+initSentry()
 
 // Initialize theme immediately to prevent FOUC and missing theme on direct loads
 try {

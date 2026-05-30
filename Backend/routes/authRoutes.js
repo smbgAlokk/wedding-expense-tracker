@@ -223,6 +223,11 @@ router.post('/login', asyncHandler(async (req, res) => {
     }
   }
 
+  // A-3 (§14.H): a banned membership can't be signed into.
+  if (matchedMember.bannedAt) {
+    return res.status(403).json({ success: false, message: 'This account can no longer access this wedding.' });
+  }
+
   // C-2: issue the session via HttpOnly cookies (access + rotating refresh +
   // csrf) instead of returning the JWT in the JSON body where any XSS could
   // read it. The response no longer carries a `token`.
@@ -308,6 +313,11 @@ router.post('/login/select-wedding', asyncHandler(async (req, res) => {
       success: false,
       message: 'Invalid wedding selection.'
     });
+  }
+
+  // A-3 (§14.H): a banned membership can't be entered via the selector either.
+  if (member.bannedAt) {
+    return res.status(403).json({ success: false, message: 'This account can no longer access this wedding.' });
   }
 
   if (!member.isActive) {
@@ -402,6 +412,9 @@ router.post('/google', asyncHandler(async (req, res) => {
     }
 
     const member = existingMembers[0];
+    if (member.bannedAt) {
+      return res.status(403).json({ success: false, message: 'This account can no longer access this wedding.' });
+    }
     await issueSession(res, req, member);
 
     return res.status(200).json({
