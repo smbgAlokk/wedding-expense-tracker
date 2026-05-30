@@ -22,6 +22,7 @@ export const translations = {
     'common.or': 'or',
     'common.and': '&',
     'common.loading': 'Loading…',
+    'common.captchaRequired': 'Please complete the captcha to continue.',
 
     // Landing — Hero (multi-vertical, Phase 2 polish)
     'landing.title1': 'Track every rupee,',
@@ -689,6 +690,7 @@ export const translations = {
     'common.or': 'या',
     'common.and': 'और',
     'common.loading': 'लोड हो रहा है…',
+    'common.captchaRequired': 'आगे बढ़ने के लिए कैप्चा पूरा करें।',
 
     // Landing — Hero (multi-vertical, Phase 2 polish)
     'landing.title1': 'हर रुपये का हिसाब,',

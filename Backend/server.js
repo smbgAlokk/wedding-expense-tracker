@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
@@ -33,6 +34,7 @@ const authRoutes = require('./routes/authRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const { errorHandler } = require('./middleware/errorHandler');
 const { mongoSanitize } = require('./middleware/sanitize');
+const { csrfProtect } = require('./middleware/csrf');
 
 const app = express();
 
@@ -94,7 +96,16 @@ const authLimiter = rateLimit({
   }
 });
 app.use('/api/weddings/join', authLimiter);
-app.use('/api/auth', authLimiter);
+// Strict limiter on the sensitive auth endpoints only. Deliberately NOT applied
+// to /api/auth/refresh, /logout, /logout-all, /me — those fire during normal
+// authenticated use (a refresh every ~15 min per tab) and must stay responsive.
+// The global 200/15min limiter above still backstops them. (C-2 migration.)
+app.use('/api/auth/login', authLimiter); // also covers /login/select-wedding
+app.use('/api/auth/google', authLimiter);
+app.use('/api/auth/forgot-password', authLimiter);
+app.use('/api/auth/reset-password', authLimiter);
+app.use('/api/auth/verify-email', authLimiter);
+app.use('/api/auth/resend-verification', authLimiter);
 
 // ===========================================
 // Body Parsing
@@ -102,8 +113,15 @@ app.use('/api/auth', authLimiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Parse cookies (access_token / refresh_token / csrf_token — C-2 migration).
+app.use(cookieParser());
+
 // Strip MongoDB operators ($, .) from incoming body/query/params
 app.use(mongoSanitize);
+
+// CSRF double-submit guard (§14.F). Must run after cookieParser. Safe methods
+// and the pre-auth bootstrap endpoints are exempt inside the middleware.
+app.use(csrfProtect);
 
 // ===========================================
 // Logging

@@ -6,8 +6,9 @@ const validator = require('validator');
 const Wedding = require('../models/Wedding');
 const Member = require('../models/Member');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { protect, adminOnly, generateToken } = require('../middleware/auth');
+const { protect, adminOnly, issueSession } = require('../middleware/auth');
 const { verifyGoogleCredential } = require('../utils/googleVerify');
+const { verifyTurnstile } = require('../utils/turnstile');
 const { escapeRegex } = require('../utils/regex');
 const { sendVerificationEmail } = require('../utils/email');
 const { mintEmailVerificationToken } = require('../utils/verificationToken');
@@ -51,6 +52,15 @@ router.post('/', signupLimiter, asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message: 'Please provide your name to create the wedding'
+    });
+  }
+
+  // H-8: CAPTCHA gate on signup (no-op unless TURNSTILE_SECRET configured).
+  const captcha = await verifyTurnstile(req.body.turnstileToken, req.ip);
+  if (!captcha.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Captcha verification failed. Please try again.'
     });
   }
 
@@ -165,9 +175,10 @@ router.post('/', signupLimiter, asyncHandler(async (req, res) => {
     await session.endSession();
   }
 
-  // Generate token for admin (outside the transaction — token issuance has no
-  // database side-effect to roll back).
-  const token = generateToken(admin._id);
+  // C-2: issue the session via HttpOnly cookies (access + rotating refresh +
+  // csrf). Outside the transaction — cookie/refresh issuance has no Wedding/
+  // Member write to roll back. The response no longer carries a `token`.
+  await issueSession(res, req, admin);
 
   // H-5: send the verification email fire-and-forget AFTER the transaction
   // commits. We never block signup response on SMTP latency, and we never
@@ -186,7 +197,6 @@ router.post('/', signupLimiter, asyncHandler(async (req, res) => {
     data: {
       wedding,
       member: admin,
-      token,
       joinCode: wedding.joinCode
     }
   });
@@ -219,6 +229,15 @@ router.post('/personal', signupLimiter, asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message: 'Please provide your name to create your personal budget'
+    });
+  }
+
+  // H-8: CAPTCHA gate on signup (no-op unless TURNSTILE_SECRET configured).
+  const captcha = await verifyTurnstile(req.body.turnstileToken, req.ip);
+  if (!captcha.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Captcha verification failed. Please try again.'
     });
   }
 
@@ -313,7 +332,8 @@ router.post('/personal', signupLimiter, asyncHandler(async (req, res) => {
     await session.endSession();
   }
 
-  const token = generateToken(owner._id);
+  // C-2: issue the session via HttpOnly cookies. The response drops `token`.
+  await issueSession(res, req, owner);
 
   // H-5: fire-and-forget verification email after the transaction commits.
   if (verification) {
@@ -329,7 +349,6 @@ router.post('/personal', signupLimiter, asyncHandler(async (req, res) => {
     data: {
       wedding: workspace,
       member: owner,
-      token,
     }
   });
 }));
@@ -400,15 +419,14 @@ router.post('/join', asyncHandler(async (req, res) => {
     }
     existingMember.password = undefined;
 
-    // Re-login existing member
-    const token = generateToken(existingMember._id);
+    // Re-login existing member (C-2: cookie session, no token in body).
+    await issueSession(res, req, existingMember);
     return res.status(200).json({
       success: true,
       message: `Welcome back, ${existingMember.name}!`,
       data: {
         wedding,
-        member: existingMember,
-        token
+        member: existingMember
       }
     });
   }
@@ -422,15 +440,14 @@ router.post('/join', asyncHandler(async (req, res) => {
     role: 'member'
   });
 
-  const token = generateToken(member._id);
+  await issueSession(res, req, member);
 
   res.status(201).json({
     success: true,
     message: `Welcome, ${member.name}! You've joined ${wedding.weddingName}.`,
     data: {
       wedding,
-      member,
-      token
+      member
     }
   });
 }));

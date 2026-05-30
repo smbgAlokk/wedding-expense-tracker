@@ -56,14 +56,29 @@ if (import.meta.env.PROD) {
 
 const api = axios.create({
   baseURL: API_BASE,
+  // C-2 (§14.F): the session lives in HttpOnly cookies now, so every request
+  // must send credentials. The API is same-origin (Vercel proxy in prod, Vite
+  // proxy in dev), so the cookie is first-party and rides along automatically.
+  withCredentials: true,
   timeout: 15000,
 });
 
-// Attach token to every request
+// ── CSRF double-submit ──────────────────────────────────────────────────────
+// On login the server sets a readable `csrf_token` cookie. We echo it in the
+// X-CSRF-Token header on every mutating request; the server compares the two.
+// A cross-site attacker can't read our cookie nor set this header, so forged
+// requests are rejected. Safe methods (GET/HEAD) don't need it.
+const MUTATING_METHODS = new Set(['post', 'put', 'patch', 'delete']);
+function readCsrfCookie(): string | null {
+  const m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('wedding_token');
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const method = (config.method || 'get').toLowerCase();
+  if (MUTATING_METHODS.has(method) && config.headers) {
+    const csrf = readCsrfCookie();
+    if (csrf) config.headers['X-CSRF-Token'] = csrf;
   }
   return config;
 }, (error) => Promise.reject(error));
@@ -96,17 +111,58 @@ function urlHandlesOwn401(url: string | undefined): boolean {
   return ENDPOINTS_THAT_HANDLE_OWN_401.some((endpoint) => url.endsWith(endpoint));
 }
 
+// Local (non-sensitive) auth cache — member + wedding only. No token has lived
+// in JS since the C-2 migration; we still clear the legacy `wedding_token` key
+// so a browser carrying one from before the deploy is cleaned up.
+function clearLocalAuthCache() {
+  localStorage.removeItem('wedding_token'); // legacy — pre-C-2
+  localStorage.removeItem('wedding_member');
+  localStorage.removeItem('wedding_data');
+}
+
+function onAuthFailure() {
+  clearLocalAuthCache();
+  if (window.location.pathname !== '/') window.location.href = '/';
+}
+
+// ── Silent access-token refresh (C-2, §14.F) ────────────────────────────────
+// The access token lives 15 min. When it expires, the next request gets a 401;
+// we transparently call /auth/refresh ONCE (single-flight — concurrent 401s
+// share one refresh), then retry the original request. If refresh fails, the
+// session is truly dead → clear cache + bounce to landing.
+const REFRESH_PATH = '/auth/refresh';
+let refreshPromise: Promise<unknown> | null = null;
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    // 401 — expired/invalid session. Clear local auth and bounce to landing,
-    // UNLESS the failing endpoint is one that prefers to handle its own 401
-    // (e.g., the multi-wedding selector — see M-15 above).
-    if (error.response?.status === 401 && !urlHandlesOwn401(error.config?.url)) {
-      localStorage.removeItem('wedding_token');
-      localStorage.removeItem('wedding_member');
-      localStorage.removeItem('wedding_data');
-      window.location.href = '/';
+  async (error) => {
+    const status = error.response?.status;
+    const original = error.config;
+    const isRefreshCall = original?.url?.endsWith(REFRESH_PATH);
+
+    // Endpoints that own their 401 (the multi-wedding selector) — hand back.
+    if (status === 401 && urlHandlesOwn401(original?.url)) {
+      return Promise.reject(error);
+    }
+
+    // A 401 on a normal request → attempt one silent refresh + retry.
+    if (status === 401 && original && !original._retry && !isRefreshCall) {
+      original._retry = true;
+      try {
+        if (!refreshPromise) {
+          refreshPromise = api.post(REFRESH_PATH).finally(() => { refreshPromise = null; });
+        }
+        await refreshPromise;
+        return api(original); // retry with the freshly-rotated cookies
+      } catch {
+        onAuthFailure();
+        return Promise.reject(error);
+      }
+    }
+
+    // Refresh itself 401'd, or a retried request still 401'd → session is dead.
+    if (status === 401 && (isRefreshCall || original?._retry)) {
+      onAuthFailure();
       return Promise.reject(error);
     }
 
@@ -128,7 +184,7 @@ api.interceptors.response.use(
 export const loginUser = (data: Record<string, any>): Promise<AxiosResponse> => api.post('/auth/login', data);
 export const googleLogin = (data: Record<string, any>): Promise<AxiosResponse> => api.post('/auth/google', data);
 export const selectWedding = (data: Record<string, any>): Promise<AxiosResponse> => api.post('/auth/login/select-wedding', data);
-export const forgotPassword = (email: string): Promise<AxiosResponse> => api.post('/auth/forgot-password', { email });
+export const forgotPassword = (email: string, turnstileToken?: string): Promise<AxiosResponse> => api.post('/auth/forgot-password', { email, turnstileToken });
 export const resetPassword = (token: string, password: string): Promise<AxiosResponse> => api.post('/auth/reset-password', { token, password });
 // H-5 (2026-05-28): email-verification flow. verifyEmail is called from the
 // /verify-email page with the token from the email link; resendVerification
@@ -136,6 +192,12 @@ export const resetPassword = (token: string, password: string): Promise<AxiosRes
 // "didn't get the email?" CTA without leaking account existence.
 export const verifyEmail = (token: string): Promise<AxiosResponse> => api.post('/auth/verify-email', { token });
 export const resendVerification = (email: string): Promise<AxiosResponse> => api.post('/auth/resend-verification', { email });
+// C-2 (§14.F): cookie-session lifecycle. getMe probes/bootstraps the session;
+// logout revokes this device's refresh token; logoutAll revokes every session.
+export const getMe = (): Promise<AxiosResponse> => api.get('/auth/me');
+export const logoutUser = (): Promise<AxiosResponse> => api.post('/auth/logout');
+export const logoutAll = (): Promise<AxiosResponse> => api.post('/auth/logout-all');
+export { clearLocalAuthCache };
 
 // ============ Workspace APIs (mounted under /weddings/ until Phase 0b rename) ============
 export const createWedding = (data: Record<string, any>): Promise<AxiosResponse> => api.post('/weddings', data);
@@ -213,9 +275,10 @@ export const joinAIWaitlist = (): Promise<AxiosResponse> => api.post('/ai/coach/
  * Server-side, the request handler watches `req.on('close')` and aborts the
  * upstream Gemini call so we don't keep paying for tokens nobody reads.
  *
- * Auth: we mirror axios's `Authorization: Bearer <token>` header by reading
- * the same `wedding_token` localStorage key that the axios interceptor uses,
- * so SSE requests carry the JWT without a separate auth flow.
+ * Auth: the session lives in the HttpOnly `access_token` cookie (C-2, §14.F).
+ * Since the API is same-origin (Vercel/Vite proxy), `credentials: 'include'`
+ * sends it automatically. /ai/coach is a mutating POST, so we also echo the
+ * CSRF token like the axios interceptor does.
  */
 export interface CoachStreamHandlers {
   onChunk: (text: string) => void;
@@ -239,27 +302,20 @@ export function streamCoachReply(
 ): CoachStreamHandle {
   const controller = new AbortController();
 
-  // Resolve the same API base axios uses (env override → '/api' fallback).
-  // We can't introspect axios.defaults.baseURL reliably across SSR/test
-  // environments, so we re-derive from the same VITE_API_URL signal.
-  const base =
-    (import.meta as any).env?.VITE_API_URL ||
-    (typeof window !== 'undefined' ? '/api' : '/api');
-
-  const token = (() => {
-    try { return window.localStorage.getItem('wedding_token') || ''; } catch { return ''; }
-  })();
+  const csrf = readCsrfCookie();
 
   const done = (async () => {
     let response: Response;
     try {
-      response = await fetch(`${base}/ai/coach`, {
+      response = await fetch(`${API_BASE}/ai/coach`, {
         method: 'POST',
         signal: controller.signal,
+        // Send the HttpOnly session cookie (same-origin via proxy).
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
         },
         body: JSON.stringify(body),
       });

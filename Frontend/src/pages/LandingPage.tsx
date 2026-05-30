@@ -6,14 +6,16 @@ import { useLang } from '../context/LanguageContext';
 import { createWedding, createPersonalWorkspace, joinWedding, loginUser, googleLogin, selectWedding, forgotPassword } from '../api';
 import ThemeToggle from '../components/ThemeToggle';
 import LanguageToggle from '../components/LanguageToggle';
+import TurnstileWidget, { isTurnstileEnabled } from '../components/TurnstileWidget';
 import type { Member, Wedding, AuthResult, WeddingOption } from '../types';
 
 // Which auth surface is showing (null = the landing hero, which now embeds the
 // multi-vertical type picker directly so users see all options upfront —
 // 'create' is the Wedding form, 'create-personal' is the Personal-vertical form.
 type Mode = 'create' | 'create-personal' | 'join' | 'login' | 'select-wedding' | 'forgot';
-// Persists an authenticated member + wedding + token into context/localStorage.
-type LoginFn = (member: Member, wedding: Wedding, token: string) => void;
+// Caches an authenticated member + wedding into context/localStorage. C-2
+// (§14.F): no token — the session is set as an HttpOnly cookie by the server.
+type LoginFn = (member: Member, wedding: Wedding) => void;
 // Receives a verified Google ID-token credential string.
 type CredentialHandler = (credential: string) => void;
 // Receives a successful auth payload (single- or multi-wedding).
@@ -167,7 +169,7 @@ export default function LandingPage() {
       setSelectorToken(data.selectorToken || null);
       setMode('select-wedding');
     } else {
-      login(data.member, data.wedding, data.token);
+      login(data.member, data.wedding);
       toast.success(tServer(data.message) || t('login.welcomeBack'));
       navigate('/dashboard');
     }
@@ -183,8 +185,8 @@ export default function LandingPage() {
     }
     try {
       const res = await selectWedding({ memberId, selectorToken });
-      const { wedding, member, token } = res.data.data;
-      login(member, wedding, token);
+      const { wedding, member } = res.data.data;
+      login(member, wedding);
       toast.success(t('select.entered', { name: wedding.weddingName }));
       navigate('/dashboard');
     } catch (err) {
@@ -381,6 +383,7 @@ function CreateForm({ onBack, login, navigate }: { onBack: () => void; login: Lo
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [captcha, setCaptcha] = useState('');
   const set = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
 
   // Wedding + admin-name fields are required for BOTH local and Google signup.
@@ -393,8 +396,8 @@ function CreateForm({ onBack, login, navigate }: { onBack: () => void; login: Lo
   };
 
   const finishCreate = (res: { data: { data: AuthResult } }) => {
-    const { wedding, member, token } = res.data.data;
-    login(member, wedding, token);
+    const { wedding, member } = res.data.data;
+    login(member, wedding);
     toast.success(t('create.successCode', { code: wedding.joinCode }));
     navigate('/dashboard');
   };
@@ -406,11 +409,12 @@ function CreateForm({ onBack, login, navigate }: { onBack: () => void; login: Lo
     if (!form.password) return toast.error(t('create.errPassword'));
     if (form.password.length < 6) return toast.error(t('create.errPasswordLength'));
     if (form.password !== form.confirmPassword) return toast.error(t('create.errPasswordMismatch'));
+    if (isTurnstileEnabled() && !captcha) return toast.error(t('common.captchaRequired'));
 
     setLoading(true);
     try {
       const adminRelation = form.adminRelation || t('create.adminRelationDefault');
-      const res = await createWedding({ ...form, adminRelation, totalBudget: parseFloat(form.totalBudget) || 0 });
+      const res = await createWedding({ ...form, adminRelation, totalBudget: parseFloat(form.totalBudget) || 0, turnstileToken: captcha });
       finishCreate(res);
     } catch (err) {
       toast.error(tServer(err.response?.data?.message) || t('create.errFailed'));
@@ -421,6 +425,7 @@ function CreateForm({ onBack, login, navigate }: { onBack: () => void; login: Lo
   // Wedding details still come from the form; identity comes from Google.
   const handleGoogleSignup = async (credential: string) => {
     if (!validateWeddingFields()) return;
+    if (isTurnstileEnabled() && !captcha) return toast.error(t('common.captchaRequired'));
     setLoading(true);
     try {
       const adminRelation = form.adminRelation || t('create.adminRelationDefault');
@@ -433,6 +438,7 @@ function CreateForm({ onBack, login, navigate }: { onBack: () => void; login: Lo
         adminName: form.adminName,
         adminRelation,
         googleCredential: credential,
+        turnstileToken: captcha,
       });
       finishCreate(res);
     } catch (err) {
@@ -510,6 +516,7 @@ function CreateForm({ onBack, login, navigate }: { onBack: () => void; login: Lo
           )}
         </div>
 
+        <TurnstileWidget onToken={setCaptcha} />
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-create" style={{ marginTop: 8 }}>
           {loading ? t('create.creating') : t('create.submitBtn')}
         </button>
@@ -529,14 +536,16 @@ function LoginForm({ onBack, onSuccess, onForgot }: { onBack: () => void; onSucc
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [captcha, setCaptcha] = useState('');
   const set = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
 
   const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     if (!form.email || !form.password) return toast.error(t('login.errMissing'));
+    if (isTurnstileEnabled() && !captcha) return toast.error(t('common.captchaRequired'));
     setLoading(true);
     try {
-      const res = await loginUser(form);
+      const res = await loginUser({ ...form, turnstileToken: captcha });
       onSuccess(res.data.data);
     } catch (err) {
       toast.error(tServer(err.response?.data?.message) || t('login.errFailed'));
@@ -574,6 +583,7 @@ function LoginForm({ onBack, onSuccess, onForgot }: { onBack: () => void; onSucc
             </button>
           </div>
         </div>
+        <TurnstileWidget onToken={setCaptcha} />
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-login" style={{ marginTop: 8 }}>
           {loading ? t('login.loggingIn') : t('login.submitBtn')}
         </button>
@@ -596,13 +606,15 @@ function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [captcha, setCaptcha] = useState('');
 
   const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     if (!email.trim()) return toast.error(t('forgot.errEmail'));
+    if (isTurnstileEnabled() && !captcha) return toast.error(t('common.captchaRequired'));
     setLoading(true);
     try {
-      await forgotPassword(email.trim());
+      await forgotPassword(email.trim(), captcha);
       setSent(true); // backend always returns a generic success (anti-enumeration)
     } catch (err) {
       // Only network/unexpected errors reach here.
@@ -635,6 +647,7 @@ function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
           <label className="form-label">{t('forgot.email')}</label>
           <input className="form-input" type="email" autoComplete="email" placeholder={t('login.emailPlaceholder')} value={email} onChange={e => setEmail(e.target.value)} id="input-forgot-email" autoFocus />
         </div>
+        <TurnstileWidget onToken={setCaptcha} />
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-forgot" style={{ marginTop: 8 }}>
           {loading ? t('forgot.sending') : t('forgot.submitBtn')}
         </button>
@@ -708,8 +721,8 @@ function JoinForm({ onBack, login, navigate, onAuthSuccess, onSwitchToLogin }: {
     setLoading(true);
     try {
       const res = await joinWedding(form);
-      const { wedding, member, token } = res.data.data;
-      login(member, wedding, token);
+      const { wedding, member } = res.data.data;
+      login(member, wedding);
       toast.success(tServer(res.data.message) || t('login.welcomeBack'));
       navigate('/dashboard');
     } catch (err) {
@@ -790,11 +803,12 @@ function CreatePersonalForm({ onBack, login, navigate }: { onBack: () => void; l
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [captcha, setCaptcha] = useState('');
   const set = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }));
 
   const finishCreate = (res: { data: { data: AuthResult } }) => {
-    const { wedding, member, token } = res.data.data;
-    login(member, wedding, token);
+    const { wedding, member } = res.data.data;
+    login(member, wedding);
     toast.success(t('createPersonal.successCreated'));
     navigate('/dashboard');
   };
@@ -806,6 +820,7 @@ function CreatePersonalForm({ onBack, login, navigate }: { onBack: () => void; l
     if (!form.password) return toast.error(t('create.errPassword'));
     if (form.password.length < 6) return toast.error(t('create.errPasswordLength'));
     if (form.password !== form.confirmPassword) return toast.error(t('create.errPasswordMismatch'));
+    if (isTurnstileEnabled() && !captcha) return toast.error(t('common.captchaRequired'));
 
     setLoading(true);
     try {
@@ -816,6 +831,7 @@ function CreatePersonalForm({ onBack, login, navigate }: { onBack: () => void; l
         email: form.email,
         password: form.password,
         confirmPassword: form.confirmPassword,
+        turnstileToken: captcha,
       });
       finishCreate(res);
     } catch (err: any) {
@@ -825,6 +841,7 @@ function CreatePersonalForm({ onBack, login, navigate }: { onBack: () => void; l
 
   const handleGoogleSignup = async (credential: string) => {
     if (!form.adminName.trim()) return toast.error(t('createPersonal.errName'));
+    if (isTurnstileEnabled() && !captcha) return toast.error(t('common.captchaRequired'));
     setLoading(true);
     try {
       const res = await createPersonalWorkspace({
@@ -832,6 +849,7 @@ function CreatePersonalForm({ onBack, login, navigate }: { onBack: () => void; l
         monthlyBudget: parseFloat(form.monthlyBudget) || 0,
         adminName: form.adminName,
         googleCredential: credential,
+        turnstileToken: captcha,
       });
       finishCreate(res);
     } catch (err: any) {
@@ -893,6 +911,7 @@ function CreatePersonalForm({ onBack, login, navigate }: { onBack: () => void; l
           )}
         </div>
 
+        <TurnstileWidget onToken={setCaptcha} />
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-personal-create" style={{ marginTop: 8 }}>
           {loading ? t('createPersonal.creating') : t('createPersonal.submitBtn')}
         </button>

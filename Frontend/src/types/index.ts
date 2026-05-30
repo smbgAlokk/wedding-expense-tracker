@@ -181,10 +181,13 @@ export interface WeddingOption {
 // also mints a short-lived (5-min) `selectorToken` that the client MUST replay
 // to /auth/login/select-wedding. Without it the select endpoint returns 401 —
 // closing the previous account-takeover hole.
+//
+// Security audit C-2 full migration (§14.F): the session JWT is no longer
+// returned in the body — it's set as an HttpOnly cookie by the server. There is
+// deliberately NO `token` field here; the client never sees the access token.
 export interface AuthResult {
   member?: Member;
   wedding?: Wedding;
-  token?: string;
   message?: string;
   multipleWeddings?: boolean;
   weddings?: WeddingOption[];
