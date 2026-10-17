@@ -6,11 +6,14 @@ const validator = require('validator');
 const Wedding = require('../models/Wedding');
 const Member = require('../models/Member');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { protect, adminOnly, generateToken } = require('../middleware/auth');
+const { protect, issueSession, loadWorkspace, requireAction } = require('../middleware/auth');
 const { verifyGoogleCredential } = require('../utils/googleVerify');
+const { verifyTurnstile } = require('../utils/turnstile');
 const { escapeRegex } = require('../utils/regex');
 const { sendVerificationEmail } = require('../utils/email');
 const { mintEmailVerificationToken } = require('../utils/verificationToken');
+const { recordAudit } = require('../utils/audit');
+const { tenantFilter } = require('../utils/tenantQuery');
 
 // Local copy of authRoutes.js's frontendBaseUrl helper. Both files build URLs
 // off FRONTEND_URL (comma-separated list — first entry wins, trailing slash
@@ -51,6 +54,15 @@ router.post('/', signupLimiter, asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message: 'Please provide your name to create the wedding'
+    });
+  }
+
+  // H-8: CAPTCHA gate on signup (no-op unless TURNSTILE_SECRET configured).
+  const captcha = await verifyTurnstile(req.body.turnstileToken, req.ip);
+  if (!captcha.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Captcha verification failed. Please try again.'
     });
   }
 
@@ -165,9 +177,10 @@ router.post('/', signupLimiter, asyncHandler(async (req, res) => {
     await session.endSession();
   }
 
-  // Generate token for admin (outside the transaction — token issuance has no
-  // database side-effect to roll back).
-  const token = generateToken(admin._id);
+  // C-2: issue the session via HttpOnly cookies (access + rotating refresh +
+  // csrf). Outside the transaction — cookie/refresh issuance has no Wedding/
+  // Member write to roll back. The response no longer carries a `token`.
+  await issueSession(res, req, admin);
 
   // H-5: send the verification email fire-and-forget AFTER the transaction
   // commits. We never block signup response on SMTP latency, and we never
@@ -176,7 +189,7 @@ router.post('/', signupLimiter, asyncHandler(async (req, res) => {
   if (verification) {
     const verifyUrl = `${frontendBaseUrl()}/verify-email?token=${verification.rawToken}`;
     sendVerificationEmail(adminEmail, verifyUrl, admin.name).catch((err) => {
-      console.error('[wedding-create] verification email send failed:', err.message);
+      req.log.error({ err: err.message }, 'wedding-create: verification email send failed');
     });
   }
 
@@ -186,7 +199,6 @@ router.post('/', signupLimiter, asyncHandler(async (req, res) => {
     data: {
       wedding,
       member: admin,
-      token,
       joinCode: wedding.joinCode
     }
   });
@@ -219,6 +231,15 @@ router.post('/personal', signupLimiter, asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message: 'Please provide your name to create your personal budget'
+    });
+  }
+
+  // H-8: CAPTCHA gate on signup (no-op unless TURNSTILE_SECRET configured).
+  const captcha = await verifyTurnstile(req.body.turnstileToken, req.ip);
+  if (!captcha.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Captcha verification failed. Please try again.'
     });
   }
 
@@ -313,13 +334,14 @@ router.post('/personal', signupLimiter, asyncHandler(async (req, res) => {
     await session.endSession();
   }
 
-  const token = generateToken(owner._id);
+  // C-2: issue the session via HttpOnly cookies. The response drops `token`.
+  await issueSession(res, req, owner);
 
   // H-5: fire-and-forget verification email after the transaction commits.
   if (verification) {
     const verifyUrl = `${frontendBaseUrl()}/verify-email?token=${verification.rawToken}`;
     sendVerificationEmail(ownerEmail, verifyUrl, owner.name).catch((err) => {
-      console.error('[personal-create] verification email send failed:', err.message);
+      req.log.error({ err: err.message }, 'personal-create: verification email send failed');
     });
   }
 
@@ -329,7 +351,6 @@ router.post('/personal', signupLimiter, asyncHandler(async (req, res) => {
     data: {
       wedding: workspace,
       member: owner,
-      token,
     }
   });
 }));
@@ -373,6 +394,15 @@ router.post('/join', asyncHandler(async (req, res) => {
   }).select('+password');
 
   if (existingMember) {
+    // A-3 (§14.H): a permanently-banned member can never re-join, regardless of
+    // credentials or name match.
+    if (existingMember.bannedAt) {
+      return res.status(403).json({
+        success: false,
+        message: 'This account can no longer join this wedding.'
+      });
+    }
+
     // SECURITY: frictionless name-based re-entry is ONLY for passwordless
     // members. Otherwise anyone holding the (widely shared) join code could
     // impersonate a credentialed user — including the admin — just by typing
@@ -400,15 +430,14 @@ router.post('/join', asyncHandler(async (req, res) => {
     }
     existingMember.password = undefined;
 
-    // Re-login existing member
-    const token = generateToken(existingMember._id);
+    // Re-login existing member (C-2: cookie session, no token in body).
+    await issueSession(res, req, existingMember);
     return res.status(200).json({
       success: true,
       message: `Welcome back, ${existingMember.name}!`,
       data: {
         wedding,
-        member: existingMember,
-        token
+        member: existingMember
       }
     });
   }
@@ -422,15 +451,14 @@ router.post('/join', asyncHandler(async (req, res) => {
     role: 'member'
   });
 
-  const token = generateToken(member._id);
+  await issueSession(res, req, member);
 
   res.status(201).json({
     success: true,
     message: `Welcome, ${member.name}! You've joined ${wedding.weddingName}.`,
     data: {
       wedding,
-      member,
-      token
+      member
     }
   });
 }));
@@ -469,17 +497,12 @@ router.get('/current', protect, asyncHandler(async (req, res) => {
  * PUT /api/weddings/current
  * Update wedding details (admin only)
  */
-router.put('/current', protect, adminOnly, asyncHandler(async (req, res) => {
-  const { weddingName, partner1, partner2, weddingDate, totalBudget, currency, categories } = req.body;
+router.put('/current', protect, loadWorkspace, requireAction('wedding.update'), asyncHandler(async (req, res) => {
+  const { weddingName, partner1, partner2, weddingDate, totalBudget, currency, categories, payDay, budgetAllocation } = req.body;
 
-  const wedding = await Wedding.findById(req.weddingId);
-
-  if (!wedding) {
-    return res.status(404).json({
-      success: false,
-      message: 'Wedding not found'
-    });
-  }
+  // A-1/A-2 (§14.H): authorization via requireAction(canAct); the workspace was
+  // already fetched by loadWorkspace, so no per-route refetch (helps M-13).
+  const wedding = req.workspace;
 
   if (weddingName) wedding.weddingName = weddingName.trim();
   if (partner1) wedding.coupleNames.partner1 = partner1.trim();
@@ -489,7 +512,68 @@ router.put('/current', protect, adminOnly, asyncHandler(async (req, res) => {
   if (currency) wedding.currency = currency;
   if (categories) wedding.categories = categories;
 
+  // L0 — Budget allocation (Need/Want/Saving target percentages). Same
+  // monthly-budget guard pattern as `payDay`. The Mongoose subdoc validator
+  // also enforces sum===100 + integer values, but we pre-validate here so
+  // the user gets a clean 400 with a specific message instead of a generic
+  // Mongoose ValidationError.
+  if (budgetAllocation !== undefined && budgetAllocation !== null) {
+    const { getFeatures } = require('../constants/workspaceDefaults');
+    if (!getFeatures(wedding.type).monthlyBudget) {
+      return res.status(400).json({
+        success: false,
+        message: 'Budget allocation can only be set on a monthly-budget workspace',
+      });
+    }
+    if (typeof budgetAllocation !== 'object') {
+      return res.status(400).json({
+        success: false,
+        message: 'Budget allocation must be an object with need, want, saving percentages',
+      });
+    }
+    const need = Number(budgetAllocation.need);
+    const want = Number(budgetAllocation.want);
+    const saving = Number(budgetAllocation.saving);
+    const allInts = Number.isInteger(need) && Number.isInteger(want) && Number.isInteger(saving);
+    const inRange = [need, want, saving].every((n) => n >= 0 && n <= 100);
+    if (!allInts || !inRange || (need + want + saving) !== 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Budget allocation must be integer percentages between 0 and 100 that sum to exactly 100',
+      });
+    }
+    wedding.budgetAllocation = { need, want, saving };
+  }
+
+  // Pay day — only meaningful for monthly-budget verticals (Personal). Reject
+  // attempts to set it on wedding/trip workspaces so the field can never carry
+  // surprising state. `null`/`''` clears the setting; the Mongoose validator
+  // catches non-integer / out-of-range values as a 400 via the global handler.
+  if (payDay !== undefined) {
+    if (payDay === null || payDay === '') {
+      wedding.payDay = null;
+    } else {
+      const { getFeatures } = require('../constants/workspaceDefaults');
+      if (!getFeatures(wedding.type).monthlyBudget) {
+        return res.status(400).json({
+          success: false,
+          message: 'Pay day can only be set on a monthly-budget workspace',
+        });
+      }
+      const n = Number(payDay);
+      if (!Number.isInteger(n) || n < 1 || n > 31) {
+        return res.status(400).json({
+          success: false,
+          message: 'Pay day must be an integer between 1 and 31',
+        });
+      }
+      wedding.payDay = n;
+    }
+  }
+
   await wedding.save();
+
+  recordAudit(req, 'wedding.update', { meta: { fields: Object.keys(req.body || {}) } });
 
   res.status(200).json({
     success: true,
@@ -503,10 +587,8 @@ router.put('/current', protect, adminOnly, asyncHandler(async (req, res) => {
  * Get all members of the wedding (protected)
  */
 router.get('/current/members', protect, asyncHandler(async (req, res) => {
-  const members = await Member.find({
-    weddingId: req.weddingId,
-    isActive: true
-  }).sort({ role: 1, createdAt: 1 });
+  const members = await Member.find(tenantFilter(req.weddingId, { isActive: true }))
+    .sort({ role: 1, createdAt: 1 });
 
   res.status(200).json({
     success: true,
@@ -518,11 +600,8 @@ router.get('/current/members', protect, asyncHandler(async (req, res) => {
  * DELETE /api/weddings/current/members/:memberId
  * Remove a member (admin only)
  */
-router.delete('/current/members/:memberId', protect, adminOnly, asyncHandler(async (req, res) => {
-  const member = await Member.findOne({
-    _id: req.params.memberId,
-    weddingId: req.weddingId
-  });
+router.delete('/current/members/:memberId', protect, requireAction('member.remove'), asyncHandler(async (req, res) => {
+  const member = await Member.findOne(tenantFilter(req.weddingId, { _id: req.params.memberId }));
 
   if (!member) {
     return res.status(404).json({
@@ -538,12 +617,18 @@ router.delete('/current/members/:memberId', protect, adminOnly, asyncHandler(asy
     });
   }
 
+  // A-3 (§14.H): `{ ban: true }` permanently bans (blocks all future re-entry),
+  // versus the default soft-delete the member could undo by re-joining.
+  const ban = req.body && (req.body.ban === true || req.body.ban === 'true');
   member.isActive = false;
+  if (ban) member.bannedAt = new Date();
   await member.save();
+
+  recordAudit(req, ban ? 'member.ban' : 'member.remove', { target: String(member._id), meta: { name: member.name, banned: ban } });
 
   res.status(200).json({
     success: true,
-    message: `${member.name} has been removed`
+    message: ban ? `${member.name} has been removed and banned` : `${member.name} has been removed`
   });
 }));
 

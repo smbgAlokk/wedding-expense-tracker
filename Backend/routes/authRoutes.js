@@ -6,8 +6,22 @@ const validator = require('validator');
 const Member = require('../models/Member');
 const Wedding = require('../models/Wedding');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { generateToken, generateSelectorToken, verifySelectorToken } = require('../middleware/auth');
+const {
+  protect,
+  issueSession,
+  generateAccessToken,
+  generateSelectorToken,
+  verifySelectorToken,
+  rotateRefreshToken,
+  revokeRefreshToken,
+  revokeAllForMember,
+  setSessionCookies,
+  clearSessionCookies,
+  REFRESH_COOKIE,
+} = require('../middleware/auth');
 const { verifyGoogleCredential } = require('../utils/googleVerify');
+const { verifyTurnstile } = require('../utils/turnstile');
+const { recordAudit } = require('../utils/audit');
 const { sendPasswordResetEmail, sendVerificationEmail } = require('../utils/email');
 const { mintEmailVerificationToken, hashToken: hashVerificationToken } = require('../utils/verificationToken');
 
@@ -56,6 +70,17 @@ router.post('/login', asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message: 'Please provide a valid email address'
+    });
+  }
+
+  // H-8: CAPTCHA gate. No-op unless TURNSTILE_SECRET is configured (verifyTurnstile
+  // returns success when disabled), so dev / un-keyed deploys are unaffected. Runs
+  // BEFORE the member lookup so a bot can't even reach the bcrypt path.
+  const captcha = await verifyTurnstile(req.body.turnstileToken, req.ip);
+  if (!captcha.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Captcha verification failed. Please try again.'
     });
   }
 
@@ -150,7 +175,6 @@ router.post('/login', asyncHandler(async (req, res) => {
   }
 
   const wedding = matchedMember.weddingId;
-  const token = generateToken(matchedMember._id);
 
   // Strip password from response
   matchedMember.password = undefined;
@@ -199,13 +223,22 @@ router.post('/login', asyncHandler(async (req, res) => {
     }
   }
 
+  // A-3 (§14.H): a banned membership can't be signed into.
+  if (matchedMember.bannedAt) {
+    return res.status(403).json({ success: false, message: 'This account can no longer access this wedding.' });
+  }
+
+  // C-2: issue the session via HttpOnly cookies (access + rotating refresh +
+  // csrf) instead of returning the JWT in the JSON body where any XSS could
+  // read it. The response no longer carries a `token`.
+  await issueSession(res, req, matchedMember);
+
   res.status(200).json({
     success: true,
     message: `Welcome back, ${matchedMember.name}!`,
     data: {
       wedding,
-      member: matchedMember,
-      token
+      member: matchedMember
     }
   });
 }));
@@ -282,20 +315,24 @@ router.post('/login/select-wedding', asyncHandler(async (req, res) => {
     });
   }
 
+  // A-3 (§14.H): a banned membership can't be entered via the selector either.
+  if (member.bannedAt) {
+    return res.status(403).json({ success: false, message: 'This account can no longer access this wedding.' });
+  }
+
   if (!member.isActive) {
     member.isActive = true;
     await member.save();
   }
 
-  const token = generateToken(member._id);
+  await issueSession(res, req, member);
 
   res.status(200).json({
     success: true,
     message: `Welcome back, ${member.name}!`,
     data: {
       wedding: member.weddingId,
-      member,
-      token
+      member
     }
   });
 }));
@@ -375,15 +412,17 @@ router.post('/google', asyncHandler(async (req, res) => {
     }
 
     const member = existingMembers[0];
-    const token = generateToken(member._id);
+    if (member.bannedAt) {
+      return res.status(403).json({ success: false, message: 'This account can no longer access this wedding.' });
+    }
+    await issueSession(res, req, member);
 
     return res.status(200).json({
       success: true,
       message: `Welcome back, ${member.name}!`,
       data: {
         wedding: member.weddingId,
-        member,
-        token
+        member
       }
     });
   }
@@ -416,15 +455,14 @@ router.post('/google', asyncHandler(async (req, res) => {
       emailVerifiedAt: new Date(),
     });
 
-    const token = generateToken(member._id);
+    await issueSession(res, req, member);
 
     return res.status(201).json({
       success: true,
       message: `Welcome, ${member.name}! You've joined ${wedding.weddingName}.`,
       data: {
         wedding,
-        member,
-        token
+        member
       }
     });
   }
@@ -449,6 +487,16 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
     success: true,
     message: 'If an account exists for this email, a reset link has been sent.'
   });
+
+  // H-8: CAPTCHA gate (no-op unless configured). Returning 400 on captcha
+  // failure is enumeration-safe — it's independent of whether the email exists.
+  const captcha = await verifyTurnstile(req.body.turnstileToken, req.ip);
+  if (!captcha.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Captcha verification failed. Please try again.'
+    });
+  }
 
   if (!email || typeof email !== 'string' || !validator.isEmail(email)) {
     return generic();
@@ -482,7 +530,7 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
     await sendPasswordResetEmail(normalizedEmail, resetUrl, resettable[0].name);
   } catch (err) {
     // Never leak whether sending succeeded; the token is already stored.
-    console.error('[forgot-password] email send failed:', err.message);
+    req.log.error({ err: err.message }, 'forgot-password: email send failed');
   }
 
   return generic();
@@ -650,10 +698,98 @@ router.post('/resend-verification', asyncHandler(async (req, res) => {
     await sendVerificationEmail(normalizedEmail, verifyUrl, unverified[0].name);
   } catch (err) {
     // Token is already stored; never leak whether sending succeeded.
-    console.error('[resend-verification] email send failed:', err.message);
+    req.log.error({ err: err.message }, 'resend-verification: email send failed');
   }
 
   return generic();
+}));
+
+// ─── Session lifecycle (Security audit C-2 full migration, §14.F) ────────────
+
+/**
+ * POST /api/auth/refresh
+ * Rotate the refresh token and mint a fresh access token. Called by the
+ * frontend's 401 interceptor when the 15-min access token expires. The refresh
+ * token is read from the HttpOnly cookie, consumed (single-use), and replaced
+ * with a new one in the same family. CSRF-protected (double-submit).
+ */
+router.post('/refresh', asyncHandler(async (req, res) => {
+  const presented = req.cookies && req.cookies[REFRESH_COOKIE];
+
+  let rotated;
+  try {
+    rotated = await rotateRefreshToken(presented, req);
+  } catch (err) {
+    clearSessionCookies(res);
+    return res.status(err.statusCode || 401).json({
+      success: false,
+      message: err.message || 'Your session has expired. Please sign in again.'
+    });
+  }
+
+  const member = await Member.findById(rotated.memberId)
+    .select('name role isActive weddingId')
+    .lean();
+
+  if (!member || !member.isActive) {
+    // Member deleted or deactivated since the refresh token was issued.
+    await revokeRefreshToken(rotated.rawToken);
+    clearSessionCookies(res);
+    return res.status(401).json({
+      success: false,
+      message: 'Your session is no longer valid. Please sign in again.'
+    });
+  }
+
+  // Re-issue cookies: fresh access token + the ROTATED refresh token (already
+  // persisted by rotateRefreshToken) + a fresh csrf token. We do NOT call
+  // issueSession here — that would mint a second, unrelated refresh family.
+  const accessToken = generateAccessToken(member._id);
+  const csrf = crypto.randomBytes(24).toString('hex');
+  setSessionCookies(res, { accessToken, refreshToken: rotated.rawToken, csrf });
+
+  return res.status(200).json({
+    success: true,
+    data: { member }
+  });
+}));
+
+/**
+ * POST /api/auth/logout
+ * Revoke the current refresh token and clear all session cookies. CSRF-protected.
+ */
+router.post('/logout', asyncHandler(async (req, res) => {
+  const presented = req.cookies && req.cookies[REFRESH_COOKIE];
+  await revokeRefreshToken(presented);
+  clearSessionCookies(res);
+  return res.status(200).json({ success: true, message: 'Signed out.' });
+}));
+
+/**
+ * POST /api/auth/logout-all
+ * Logout-everywhere: revoke every active refresh token for the authenticated
+ * member (all devices/sessions), then clear this device's cookies.
+ */
+router.post('/logout-all', protect, asyncHandler(async (req, res) => {
+  await revokeAllForMember(req.member._id);
+  recordAudit(req, 'auth.logout_all', {});
+  clearSessionCookies(res);
+  return res.status(200).json({ success: true, message: 'Signed out of all devices.' });
+}));
+
+/**
+ * GET /api/auth/me
+ * Session probe + bootstrap. Returns the current member + wedding if the access
+ * token is valid; 401 otherwise (the frontend's interceptor then tries /refresh).
+ * Safe method → CSRF-exempt.
+ */
+router.get('/me', protect, asyncHandler(async (req, res) => {
+  const member = await Member.findById(req.member._id); // toJSON strips sensitive fields
+  const wedding = await Wedding.findById(req.weddingId);
+  if (!member) {
+    return res.status(401).json({ success: false, message: 'Session not found. Please sign in again.' });
+  }
+  return res.status(200).json({ success: true, data: { member, wedding } });
 }));
 
 module.exports = router;

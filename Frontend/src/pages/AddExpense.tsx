@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useWedding } from '../context/WeddingContext';
 import { useLang } from '../context/LanguageContext';
 import { addExpense } from '../api';
+import { cacheInvalidate } from '../utils/dataCache';
 import LanguageToggle from '../components/LanguageToggle';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -17,11 +18,16 @@ const ACCEPT_STRING = 'image/jpeg,image/png,image/webp,image/heic,image/heif';
 
 export default function AddExpense() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { wedding, member, features, refreshSummary, refreshWedding } = useWedding();
   const { t, tCat, tServer } = useLang();
-  const [step, setStep] = useState(1);
+  // Allow the dashboard's quick-add chips to deep-link straight to step 2 by
+  // pre-selecting a category. Verified against wedding.categories so a stale
+  // URL param can't bypass category validation.
+  const initialCategory = searchParams.get('category') || '';
+  const [step, setStep] = useState(initialCategory ? 2 : 1);
   const [form, setForm] = useState({
-    category: '',
+    category: initialCategory,
     amount: '',
     description: '',
     paidBy: member?.name || '',
@@ -47,6 +53,17 @@ export default function AddExpense() {
   // Refresh wedding data on mount (for latest categories)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { refreshWedding(); }, []);
+
+  // Reject a stale ?category= deep-link if the category isn't in the live
+  // list (admin may have removed it). Drops the user back to step 1.
+  useEffect(() => {
+    if (!form.category || !wedding?.categories?.length) return;
+    const valid = wedding.categories.some(c => c.name === form.category);
+    if (!valid) {
+      setForm(p => ({ ...p, category: '' }));
+      setStep(1);
+    }
+  }, [wedding?.categories, form.category]);
 
   // Autofocus amount input when step 2 becomes active
   useEffect(() => {
@@ -164,6 +181,12 @@ export default function AddExpense() {
       } else {
         toast.success(t('add.success'));
       }
+
+      // Invalidate the Insights analytics cache so the next visit to
+      // /insights fetches fresh totals & breakdowns reflecting this new
+      // expense. Without this, the user adds an expense → opens Insights →
+      // sees stale numbers from a cached previous range.
+      cacheInvalidate('analytics:');
 
       refreshSummary();
       navigate('/dashboard');

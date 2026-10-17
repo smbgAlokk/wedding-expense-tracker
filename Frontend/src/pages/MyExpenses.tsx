@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useWedding } from '../context/WeddingContext';
 import { useLang } from '../context/LanguageContext';
 import { fmtSimple, fmtDate } from '../utils/format';
 import { getMyExpenses, deleteExpense } from '../api';
+import { cacheInvalidate } from '../utils/dataCache';
 import ExpenseDetailSheet from '../components/ExpenseDetailSheet';
 import Loader from '../components/Loader';
 import { SortableFilterableTableHeader, SortState, FilterState } from '../UI/SortableFilterableTableHeader';
@@ -12,6 +13,7 @@ import '../AllExpensesTable.css';
 
 export default function MyExpenses() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { wedding, features, refreshSummary } = useWedding();
   const { t, tCat, tServer, lang } = useLang();
   const [expenses, setExpenses] = useState([]);
@@ -21,7 +23,9 @@ export default function MyExpenses() {
 
   // Table sorting + filtering — ALL client-side. /expenses/my returns the member's
   // full list in one request, so sorting/searching never hits the API again.
-  const [filter, setFilter] = useState('all');
+  // The dashboard's category chips deep-link via ?category=Name; honour that on
+  // first render so the page lands pre-filtered.
+  const [filter, setFilter] = useState(() => searchParams.get('category') || 'all');
   const [sortState, setSortState] = useState<SortState>({});
   const [filterState, setFilterState] = useState<FilterState>({});
   const [openPopover, setOpenPopover] = useState<string | null>(null);
@@ -125,6 +129,8 @@ export default function MyExpenses() {
       // Optimistic local update — smoother than a refetch, and keeps the hero total in sync.
       setExpenses(prev => (prev as any[]).filter(e => e._id !== id) as any);
       setTotalSpent(prev => prev - (Number(removed?.amount) || 0));
+      // Insights cache now stale — next /insights visit pulls fresh data.
+      cacheInvalidate('analytics:');
       refreshSummary();
     } catch (err: any) {
       toast.error(tServer(err.response?.data?.message) || t('my.errDelete'));

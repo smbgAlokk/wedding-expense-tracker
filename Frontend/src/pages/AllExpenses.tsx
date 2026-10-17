@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useWedding } from '../context/WeddingContext';
 import { useLang } from '../context/LanguageContext';
 import { fmtSimple, fmtDate } from '../utils/format';
 import { getExpenses, deleteExpense } from '../api';
+import { cacheInvalidate } from '../utils/dataCache';
 import ExpenseDetailSheet from '../components/ExpenseDetailSheet';
 import Loader from '../components/Loader';
 import { SortableFilterableTableHeader, SortState, FilterState } from '../UI/SortableFilterableTableHeader';
@@ -20,12 +21,15 @@ const CACHE_TTL_MS = 30_000;
 
 export default function AllExpenses() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { wedding, isAdmin, refreshSummary } = useWedding();
   const { t, tCat, tServer, lang } = useLang();
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isFetching, setIsFetching] = useState(false);
-  const [filter, setFilter] = useState('all');
+  // Honour a ?category=Name deep link from the Dashboard's category chips so
+  // the page lands pre-filtered to that category.
+  const [filter, setFilter] = useState(() => searchParams.get('category') || 'all');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState(null);
   const [selectedExpense, setSelectedExpense] = useState(null);
@@ -155,6 +159,8 @@ export default function AllExpenses() {
       toast.success(t('all.deleted'));
       cacheRef.current.clear();        // data changed — every cached view is now stale
       setReloadToken(n => n + 1);      // force a fresh fetch of the current view
+      // Insights cache now stale — next /insights visit pulls fresh data.
+      cacheInvalidate('analytics:');
       refreshSummary();
     } catch (err) {
       toast.error(tServer(err.response?.data?.message) || t('all.errDelete'));

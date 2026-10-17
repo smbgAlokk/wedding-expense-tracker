@@ -33,8 +33,11 @@ export default function BottomNav() {
       id: isAdmin ? 'settings' : 'members',
     });
   } else {
-    // Personal: admin-only by construction (the lone owner). Settings tab
-    // gives access to budget edit + categories + logout.
+    // Personal: admin-only by construction (the lone owner). Insights
+    // (L1 — Reports) takes the slot Wedding uses for Members; Settings
+    // remains the last tab. Final order: Home · MyExpenses · + · Insights ·
+    // Settings (5 tabs, no overcrowding).
+    items.push({ path: '/insights', icon: '📊', label: t('nav.insights'), id: 'insights' });
     items.push({ path: '/settings', icon: '⚙️', label: t('nav.settings'), id: 'settings' });
   }
 

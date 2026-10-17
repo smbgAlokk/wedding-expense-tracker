@@ -63,21 +63,45 @@ const TRIP_DEFAULTS = [
   { name: 'Miscellaneous', icon: '📦', budgetLimit: 0 },
 ];
 
+// Personal-vertical defaults are tagged with a `bucket` per the L0
+// (Need/Want/Saving) framework. The 50/30/20 rule from personal finance:
+//   • Need   — essentials you can't easily skip (shelter, food, transit, debt)
+//   • Want   — discretionary lifestyle spending (dining out, subs, shopping)
+//   • Saving — wealth building (investments). EMIs are intentionally a Need
+//              because they're obligations, not optional savings.
+// Wedding/Trip categories don't ship buckets — buckets are a monthly-budget
+// vertical concept. The Wedding schema's `bucket` field defaults to undefined
+// for those categories and is ignored by the UI gates.
 const PERSONAL_DEFAULTS = [
-  { name: 'Rent', icon: '🏠', budgetLimit: 0 },
-  { name: 'Groceries', icon: '🛒', budgetLimit: 0 },
-  { name: 'Eating Out', icon: '🍔', budgetLimit: 0 },
-  { name: 'Transport', icon: '🚇', budgetLimit: 0 },
-  { name: 'Utilities', icon: '💡', budgetLimit: 0 },
-  { name: 'Subscriptions', icon: '🎬', budgetLimit: 0 },
-  { name: 'Health', icon: '💊', budgetLimit: 0 },
-  { name: 'Shopping', icon: '🛍️', budgetLimit: 0 },
-  { name: 'Investments', icon: '📈', budgetLimit: 0 },
-  { name: 'EMIs / Loans', icon: '🏦', budgetLimit: 0 },
-  { name: 'Personal Care', icon: '💆', budgetLimit: 0 },
-  { name: 'Entertainment', icon: '🎮', budgetLimit: 0 },
-  { name: 'Miscellaneous', icon: '📦', budgetLimit: 0 },
+  { name: 'Rent', icon: '🏠', budgetLimit: 0, bucket: 'need' },
+  { name: 'Groceries', icon: '🛒', budgetLimit: 0, bucket: 'need' },
+  { name: 'Eating Out', icon: '🍔', budgetLimit: 0, bucket: 'want' },
+  { name: 'Transport', icon: '🚇', budgetLimit: 0, bucket: 'need' },
+  { name: 'Utilities', icon: '💡', budgetLimit: 0, bucket: 'need' },
+  { name: 'Subscriptions', icon: '🎬', budgetLimit: 0, bucket: 'want' },
+  { name: 'Health', icon: '💊', budgetLimit: 0, bucket: 'need' },
+  { name: 'Shopping', icon: '🛍️', budgetLimit: 0, bucket: 'want' },
+  { name: 'Investments', icon: '📈', budgetLimit: 0, bucket: 'saving' },
+  { name: 'EMIs / Loans', icon: '🏦', budgetLimit: 0, bucket: 'need' },
+  { name: 'Personal Care', icon: '💆', budgetLimit: 0, bucket: 'need' },
+  { name: 'Entertainment', icon: '🎮', budgetLimit: 0, bucket: 'want' },
+  { name: 'Miscellaneous', icon: '📦', budgetLimit: 0, bucket: 'want' },
 ];
+
+// L0 — budget buckets that monthly-budget verticals (Personal) use to score
+// alignment with the user's target allocation. Names are LOCKED (industry
+// 50/30/20 framework); percentages are USER-customizable on the workspace.
+const BUDGET_BUCKETS = ['need', 'want', 'saving'];
+
+// Default allocation when a Personal workspace is created. The classic
+// 50/30/20 rule. Users can change this freely in Settings; sum must === 100.
+const DEFAULT_BUDGET_ALLOCATION = { need: 50, want: 30, saving: 20 };
+
+// Default bucket for a category that doesn't have one set (legacy categories
+// created before L0, or user-added customs). 'want' is the safest default —
+// surfaces in the discretionary bucket where the user is most likely to want
+// to review and re-bucket them.
+const DEFAULT_BUCKET = 'want';
 
 const DEFAULT_CATEGORIES_BY_TYPE = {
   wedding: WEDDING_DEFAULTS,
@@ -148,11 +172,26 @@ function getFeatures(type) {
   return FEATURES_BY_TYPE[type] || FEATURES_BY_TYPE[DEFAULT_WORKSPACE_TYPE];
 }
 
+/**
+ * L0 — resolve a category's bucket. Returns the stored bucket if valid;
+ * falls back to DEFAULT_BUCKET for legacy categories created before L0 or
+ * for any unrecognised value. Never throws; always returns one of
+ * BUDGET_BUCKETS.
+ */
+function resolveBucket(category) {
+  const b = category && category.bucket;
+  return BUDGET_BUCKETS.includes(b) ? b : DEFAULT_BUCKET;
+}
+
 module.exports = {
   DEFAULT_CATEGORIES_BY_TYPE,
   FEATURES_BY_TYPE,
   WORKSPACE_TYPES,
   DEFAULT_WORKSPACE_TYPE,
+  BUDGET_BUCKETS,
+  DEFAULT_BUDGET_ALLOCATION,
+  DEFAULT_BUCKET,
   getDefaultCategories,
   getFeatures,
+  resolveBucket,
 };

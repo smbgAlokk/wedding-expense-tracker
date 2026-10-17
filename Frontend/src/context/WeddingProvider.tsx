@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
-import { getCurrentWedding, getExpenseSummary, getWeddingMembers } from '../api';
+import { getCurrentWedding, getExpenseSummary, getWeddingMembers, logoutUser } from '../api';
 import type {
   Wedding,
   Member,
@@ -11,6 +11,7 @@ import { DEFAULT_WORKSPACE_TYPE } from '../types';
 import { getFeaturesByType } from '../constants/defaultCategories';
 import { useLang } from './LanguageContext';
 import { WeddingContext, type WeddingContextType } from './WeddingContext';
+import { cacheInvalidate } from '../utils/dataCache';
 
 const VISIBILITY_REFRESH_THROTTLE_MS = 15_000;
 
@@ -35,11 +36,15 @@ export function WeddingProvider({ children }: WeddingProviderProps) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
-  const isAuthenticated = !!localStorage.getItem('wedding_token') && !!member;
+  // C-2 (§14.F): the JWT is now an HttpOnly cookie, invisible to JS. We can no
+  // longer derive auth from a token in localStorage. The cached `member` drives
+  // the optimistic initial render; the first API call validates the cookie and
+  // the 401 interceptor clears the cache (+ bounces to landing) if it's dead.
+  const isAuthenticated = !!member;
   const isAdmin = member?.role === 'admin';
 
-  const login = useCallback((memberData: Member, weddingData: Wedding, token: string) => {
-    localStorage.setItem('wedding_token', token);
+  const login = useCallback((memberData: Member, weddingData: Wedding) => {
+    // member + wedding are non-sensitive UX cache only — no token here.
     localStorage.setItem('wedding_member', JSON.stringify(memberData));
     localStorage.setItem('wedding_data', JSON.stringify(weddingData));
     setMember(memberData);
@@ -47,13 +52,20 @@ export function WeddingProvider({ children }: WeddingProviderProps) {
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem('wedding_token');
+    // Best-effort server-side revocation of this device's refresh token; clear
+    // local state regardless of whether the network call succeeds.
+    logoutUser().catch(() => {});
+    localStorage.removeItem('wedding_token'); // legacy key (pre-C-2)
     localStorage.removeItem('wedding_member');
     localStorage.removeItem('wedding_data');
     setMember(null);
     setWedding(null);
     setSummary(null);
     setMembers([]);
+    // Wipe every cached view on logout — on a shared device, the next
+    // user must never see leftover analytics / AI quota state from the
+    // previous session.
+    cacheInvalidate();
   }, []);
 
   const refreshWedding = useCallback(async () => {

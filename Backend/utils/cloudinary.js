@@ -1,4 +1,5 @@
 const cloudinary = require('cloudinary').v2;
+const { logger } = require('./logger');
 
 // Configure Cloudinary from environment variables.
 // Fails gracefully — if not configured, receipt uploads are silently skipped.
@@ -43,6 +44,13 @@ const uploadToCloudinary = (buffer, folder, publicId) => {
 
     const stream = cloudinary.uploader.upload_stream(opts, (err, result) => {
       if (err) return reject(err);
+      // L-3 (§14.H): assert the returned URL genuinely belongs to our Cloudinary
+      // account before persisting it on an expense, so an unexpected/tampered
+      // response can't inject an arbitrary URL into a receipt record.
+      const expectedPrefix = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/`;
+      if (!result || typeof result.secure_url !== 'string' || !result.secure_url.startsWith(expectedPrefix)) {
+        return reject(new Error('Cloudinary returned an unexpected URL'));
+      }
       resolve({
         url: result.secure_url,
         publicId: result.public_id,
@@ -64,7 +72,7 @@ const deleteFromCloudinary = async (publicId) => {
   try {
     await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
   } catch (err) {
-    console.warn('[Cloudinary] Failed to delete asset:', publicId, err.message);
+    logger.warn({ publicId, err: err.message }, 'Cloudinary asset delete failed');
   }
 };
 

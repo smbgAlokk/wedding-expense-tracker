@@ -27,7 +27,10 @@ export interface WeddingContextType {
   // letting Phase 0a callers continue using existing wedding-only keys while
   // future verticals add their own namespaced strings without disruption.
   tw: (key: string, vars?: Record<string, string | number>) => string;
-  login: (memberData: Member, weddingData: Wedding, token: string) => void;
+  // C-2 (§14.F): the session token is no longer passed through JS — it's set as
+  // an HttpOnly cookie by the server. login() just caches the (non-sensitive)
+  // member + wedding for instant render; the cookie carries the auth.
+  login: (memberData: Member, weddingData: Wedding) => void;
   logout: () => void;
   refreshWedding: () => Promise<void>;
   // Optional `params` carries an ISO `from`/`to` date range so callers can scope

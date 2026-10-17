@@ -2,35 +2,74 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
-const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-// Production preflight (audit H-4 part B, 2026-05-28). Without SMTP the
-// password-reset flow either silently no-ops (after the H-4A fix) or — under
-// the previous behaviour — leaked raw reset URLs to stdout. Refuse to boot in
-// production rather than ship a known-vulnerable feature. Dev is unaffected.
-if (process.env.NODE_ENV === 'production') {
-  const missingSmtp = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS'].filter((k) => !process.env[k]);
-  if (missingSmtp.length) {
-    console.error(`[Preflight] FATAL: SMTP env vars missing in production: ${missingSmtp.join(', ')}. Refusing to start — password reset would fail closed.`);
-    process.exit(1);
-  }
+const { logger, httpSerializers } = require('./utils/logger');
+const boot = require('./utils/boot');
+const pinoHttp = require('pino-http');
+const crypto = require('crypto');
+const { checkEnv, checkJoinCodeIndex } = require('./config/preflight');
+const { initSentry, captureError } = require('./config/sentry');
+const { isEmailConfigured } = require('./utils/email');
+const { isConfigured: isCloudinaryConfigured } = require('./utils/cloudinary');
+const { version: APP_VERSION } = require('./package.json');
+
+boot.banner({ service: 'Wedding Expense Tracker API', version: APP_VERSION });
+
+// Boot-time preflight (audit P-2, §14.G): refuse to start in production if any
+// required secret is missing (supersedes the old SMTP-only check). initSentry
+// is DSN-gated — a no-op unless SENTRY_DSN is set.
+checkEnv();
+const sentryEnabled = !!initSentry();
+
+const hasEnv = (key) => !!process.env[key] && String(process.env[key]).trim() !== '';
+const integrations = {
+  Google: hasEnv('GOOGLE_CLIENT_ID'),
+  Cloudinary: isCloudinaryConfigured(),
+  SMTP: isEmailConfigured(),
+  Turnstile: hasEnv('TURNSTILE_SECRET'),
+  Sentry: sentryEnabled,
+  Gemini: hasEnv('GEMINI_API_KEY'),
+};
+const enabledCount = Object.values(integrations).filter(Boolean).length;
+boot.step('Integrations', 'info', `${enabledCount}/${Object.keys(integrations).length} configured`, { integrations });
+
+// L3 — AI Coach preflight. Unlike SMTP (which is required for password
+// reset, a critical-path feature), the AI Coach is opt-in and Personal-only,
+// so a missing GEMINI_API_KEY is NOT fatal — the /api/ai routes return a
+// graceful 503 and the frontend shows an "AI Coach unavailable" placeholder.
+// We log a clear warning at boot so the operator knows to set the key.
+if (!integrations.Gemini) {
+  boot.step('AI Coach', 'warn', 'GEMINI_API_KEY not set — /api/ai endpoints return 503 until configured');
+}
+if (!integrations.SMTP && process.env.NODE_ENV !== 'production') {
+  boot.step('Email', 'skip', 'SMTP not configured — reset & verification links are printed in this terminal');
 }
 
 const weddingRoutes = require('./routes/weddingRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const authRoutes = require('./routes/authRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 const { errorHandler } = require('./middleware/errorHandler');
 const { mongoSanitize } = require('./middleware/sanitize');
+const { csrfProtect } = require('./middleware/csrf');
 
 const app = express();
 
 // Behind a reverse proxy (Railway / Vercel). Without this, express-rate-limit
 // and req.ip see the proxy's IP instead of the real client — breaking rate
 // limiting (everyone shares one bucket, or X-Forwarded-For can be spoofed).
-// `1` trusts a single proxy hop, which is what these platforms provide.
-app.set('trust proxy', 1);
+// M-6 (§14.G): hop count configurable via TRUST_PROXY (default 1 = Railway; the
+// Vercel→Railway proxy path may warrant 2). Accepts a number, 'true', 'false'.
+app.set('trust proxy', (() => {
+  const tp = process.env.TRUST_PROXY;
+  if (tp === undefined || tp === '') return 1;
+  if (tp === 'true') return true;
+  if (tp === 'false') return false;
+  return Number(tp);
+})());
 
 // ===========================================
 // Security Middleware
@@ -70,7 +109,10 @@ const limiter = rateLimit({
     message: 'Too many requests, please try again later'
   },
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  // Platform health probes (Render polls every few seconds) must never be 429'd,
+  // or the service is marked unhealthy and restarted.
+  skip: (req) => req.path === '/health'
 });
 app.use('/api/', limiter);
 
@@ -84,7 +126,16 @@ const authLimiter = rateLimit({
   }
 });
 app.use('/api/weddings/join', authLimiter);
-app.use('/api/auth', authLimiter);
+// Strict limiter on the sensitive auth endpoints only. Deliberately NOT applied
+// to /api/auth/refresh, /logout, /logout-all, /me — those fire during normal
+// authenticated use (a refresh every ~15 min per tab) and must stay responsive.
+// The global 200/15min limiter above still backstops them. (C-2 migration.)
+app.use('/api/auth/login', authLimiter); // also covers /login/select-wedding
+app.use('/api/auth/google', authLimiter);
+app.use('/api/auth/forgot-password', authLimiter);
+app.use('/api/auth/reset-password', authLimiter);
+app.use('/api/auth/verify-email', authLimiter);
+app.use('/api/auth/resend-verification', authLimiter);
 
 // ===========================================
 // Body Parsing
@@ -92,15 +143,34 @@ app.use('/api/auth', authLimiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Parse cookies (access_token / refresh_token / csrf_token — C-2 migration).
+app.use(cookieParser());
+
 // Strip MongoDB operators ($, .) from incoming body/query/params
 app.use(mongoSanitize);
 
+// CSRF double-submit guard (§14.F). Must run after cookieParser. Safe methods
+// and the pre-auth bootstrap endpoints are exempt inside the middleware.
+app.use(csrfProtect);
+
 // ===========================================
-// Logging
+// Logging — structured JSON via pino + per-request correlation id (L-2)
 // ===========================================
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-}
+app.use(pinoHttp({
+  logger,
+  serializers: httpSerializers,
+  customLogLevel: (req, res, err) => {
+    if (err || res.statusCode >= 500) return 'error';
+    if (res.statusCode >= 400) return 'warn';
+    return 'info';
+  },
+  genReqId: (req, res) => {
+    const id = req.headers['x-request-id'] || crypto.randomUUID();
+    res.setHeader('X-Request-Id', id);
+    return id;
+  },
+  autoLogging: { ignore: (req) => req.url === '/api/health' },
+}));
 
 // ===========================================
 // Health Check
@@ -109,8 +179,7 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Wedding Expense Tracker API is running',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -120,6 +189,16 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/weddings', weddingRoutes);
 app.use('/api/expenses', expenseRoutes);
+app.use('/api/ai', aiRoutes);
+
+// CSP violation report sink (M-3 / P-9, §14.G). The browser POSTs violation
+// reports here (wired via report-uri in vercel.json). CSRF-exempt.
+app.post('/api/csp-report',
+  express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '64kb' }),
+  (req, res) => {
+    logger.warn({ cspReport: req.body }, 'CSP violation');
+    res.status(204).end();
+  });
 
 // ===========================================
 // 404 Handler
@@ -142,22 +221,56 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/wedding-expense-tracker';
 
+boot.step('Database', 'pending', `connecting to ${boot.mongoHost(MONGODB_URI)}`);
+const dbStartedAt = Date.now();
+
 mongoose.connect(MONGODB_URI)
-  .then(() => {
-    console.log('✅ Connected to MongoDB');
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+  .then(async () => {
+    const { name, host } = mongoose.connection;
+    boot.step('Database', 'ok', `connected in ${Date.now() - dbStartedAt} ms · db "${name}" · ${host}`);
+    mongoose.connection.on('disconnected', () => logger.warn('MongoDB disconnected — driver will retry'));
+    mongoose.connection.on('reconnected', () => logger.info('MongoDB reconnected'));
+    await checkJoinCodeIndex(); // P-3 (§14.G)
+    const server = app.listen(PORT, () => {
+      const url = `http://localhost:${PORT}`;
+      boot.step('HTTP', 'ok', `listening on port ${PORT}`);
+      boot.ready({ url, origins: allowedOrigins });
     });
+    server.on('error', (err) => {
+      const hint = err.code === 'EADDRINUSE'
+        ? `Port ${PORT} is already in use — another backend instance is probably running.`
+        : undefined;
+      boot.step('HTTP', 'fail', err.message, { hint });
+      boot.abort('Startup aborted');
+      process.exit(1);
+    });
+
+    // Graceful shutdown: hosts (Render) send SIGTERM on every deploy/restart.
+    // Stop accepting connections, let in-flight requests (SSE coach streams,
+    // receipt uploads) finish, close Mongo, then exit. Hard cap at 10 s.
+    const shutdown = (signal) => {
+      logger.info({ signal }, 'Shutting down gracefully');
+      setTimeout(() => {
+        logger.warn('Shutdown timed out — forcing exit');
+        server.closeAllConnections();
+        process.exit(1);
+      }, 10_000).unref();
+      server.close(() => mongoose.connection.close().finally(() => process.exit(0)));
+      server.closeIdleConnections();
+    };
+    process.once('SIGTERM', shutdown);
+    process.once('SIGINT', shutdown);
   })
   .catch((err) => {
-    console.error('❌ MongoDB connection error:', err.message);
+    boot.step('Database', 'fail', err.message, { hint: boot.mongoHint(err) });
+    boot.abort('Startup aborted — could not connect to MongoDB');
     process.exit(1);
   });
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
-  console.error('UNHANDLED REJECTION:', err);
+  logger.error({ err }, 'Unhandled promise rejection');
+  captureError(err);
   // Don't crash in production, just log
   if (process.env.NODE_ENV !== 'production') {
     process.exit(1);
