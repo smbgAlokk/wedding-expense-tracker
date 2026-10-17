@@ -2,7 +2,7 @@
 # The frontend stays on Vercel and proxies /api/* here (Frontend/vercel.json).
 services:
   - type: web
-    name: wedding-expense-tracker-api
+    name: wedding-expense-tracker
     runtime: node
     rootDir: Backend
     branch: main
