@@ -6,25 +6,46 @@ const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-const { logger } = require('./utils/logger');
+const { logger, httpSerializers } = require('./utils/logger');
+const boot = require('./utils/boot');
 const pinoHttp = require('pino-http');
 const crypto = require('crypto');
 const { checkEnv, checkJoinCodeIndex } = require('./config/preflight');
 const { initSentry, captureError } = require('./config/sentry');
+const { isEmailConfigured } = require('./utils/email');
+const { isConfigured: isCloudinaryConfigured } = require('./utils/cloudinary');
+const { version: APP_VERSION } = require('./package.json');
+
+boot.banner({ service: 'Wedding Expense Tracker API', version: APP_VERSION });
 
 // Boot-time preflight (audit P-2, §14.G): refuse to start in production if any
 // required secret is missing (supersedes the old SMTP-only check). initSentry
 // is DSN-gated — a no-op unless SENTRY_DSN is set.
 checkEnv();
-initSentry();
+const sentryEnabled = !!initSentry();
+
+const hasEnv = (key) => !!process.env[key] && String(process.env[key]).trim() !== '';
+const integrations = {
+  Google: hasEnv('GOOGLE_CLIENT_ID'),
+  Cloudinary: isCloudinaryConfigured(),
+  SMTP: isEmailConfigured(),
+  Turnstile: hasEnv('TURNSTILE_SECRET'),
+  Sentry: sentryEnabled,
+  Gemini: hasEnv('GEMINI_API_KEY'),
+};
+const enabledCount = Object.values(integrations).filter(Boolean).length;
+boot.step('Integrations', 'info', `${enabledCount}/${Object.keys(integrations).length} configured`, { integrations });
 
 // L3 — AI Coach preflight. Unlike SMTP (which is required for password
 // reset, a critical-path feature), the AI Coach is opt-in and Personal-only,
 // so a missing GEMINI_API_KEY is NOT fatal — the /api/ai routes return a
 // graceful 503 and the frontend shows an "AI Coach unavailable" placeholder.
 // We log a clear warning at boot so the operator knows to set the key.
-if (!process.env.GEMINI_API_KEY || String(process.env.GEMINI_API_KEY).trim() === '') {
-  console.warn('[Preflight] WARNING: GEMINI_API_KEY not set. AI Coach endpoints will return 503 until configured.');
+if (!integrations.Gemini) {
+  boot.step('AI Coach', 'warn', 'GEMINI_API_KEY not set — /api/ai endpoints return 503 until configured');
+}
+if (!integrations.SMTP && process.env.NODE_ENV !== 'production') {
+  boot.step('Email', 'skip', 'SMTP not configured — reset & verification links are printed in this terminal');
 }
 
 const weddingRoutes = require('./routes/weddingRoutes');
@@ -88,7 +109,10 @@ const limiter = rateLimit({
     message: 'Too many requests, please try again later'
   },
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  // Platform health probes (Render polls every few seconds) must never be 429'd,
+  // or the service is marked unhealthy and restarted.
+  skip: (req) => req.path === '/health'
 });
 app.use('/api/', limiter);
 
@@ -134,6 +158,12 @@ app.use(csrfProtect);
 // ===========================================
 app.use(pinoHttp({
   logger,
+  serializers: httpSerializers,
+  customLogLevel: (req, res, err) => {
+    if (err || res.statusCode >= 500) return 'error';
+    if (res.statusCode >= 400) return 'warn';
+    return 'info';
+  },
   genReqId: (req, res) => {
     const id = req.headers['x-request-id'] || crypto.randomUUID();
     res.setHeader('X-Request-Id', id);
@@ -191,22 +221,55 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/wedding-expense-tracker';
 
+boot.step('Database', 'pending', `connecting to ${boot.mongoHost(MONGODB_URI)}`);
+const dbStartedAt = Date.now();
+
 mongoose.connect(MONGODB_URI)
   .then(async () => {
-    logger.info('Connected to MongoDB');
+    const { name, host } = mongoose.connection;
+    boot.step('Database', 'ok', `connected in ${Date.now() - dbStartedAt} ms · db "${name}" · ${host}`);
+    mongoose.connection.on('disconnected', () => logger.warn('MongoDB disconnected — driver will retry'));
+    mongoose.connection.on('reconnected', () => logger.info('MongoDB reconnected'));
     await checkJoinCodeIndex(); // P-3 (§14.G)
-    app.listen(PORT, () => {
-      logger.info({ port: PORT, env: process.env.NODE_ENV || 'development' }, 'Server running');
+    const server = app.listen(PORT, () => {
+      const url = `http://localhost:${PORT}`;
+      boot.step('HTTP', 'ok', `listening on port ${PORT}`);
+      boot.ready({ url, origins: allowedOrigins });
     });
+    server.on('error', (err) => {
+      const hint = err.code === 'EADDRINUSE'
+        ? `Port ${PORT} is already in use — another backend instance is probably running.`
+        : undefined;
+      boot.step('HTTP', 'fail', err.message, { hint });
+      boot.abort('Startup aborted');
+      process.exit(1);
+    });
+
+    // Graceful shutdown: hosts (Render) send SIGTERM on every deploy/restart.
+    // Stop accepting connections, let in-flight requests (SSE coach streams,
+    // receipt uploads) finish, close Mongo, then exit. Hard cap at 10 s.
+    const shutdown = (signal) => {
+      logger.info({ signal }, 'Shutting down gracefully');
+      setTimeout(() => {
+        logger.warn('Shutdown timed out — forcing exit');
+        server.closeAllConnections();
+        process.exit(1);
+      }, 10_000).unref();
+      server.close(() => mongoose.connection.close().finally(() => process.exit(0)));
+      server.closeIdleConnections();
+    };
+    process.once('SIGTERM', shutdown);
+    process.once('SIGINT', shutdown);
   })
   .catch((err) => {
-    logger.error({ err: err.message }, 'MongoDB connection error');
+    boot.step('Database', 'fail', err.message, { hint: boot.mongoHint(err) });
+    boot.abort('Startup aborted — could not connect to MongoDB');
     process.exit(1);
   });
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
-  logger.error({ err }, 'UNHANDLED REJECTION');
+  logger.error({ err }, 'Unhandled promise rejection');
   captureError(err);
   // Don't crash in production, just log
   if (process.env.NODE_ENV !== 'production') {

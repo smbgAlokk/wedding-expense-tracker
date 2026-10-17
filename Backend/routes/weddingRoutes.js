@@ -189,7 +189,7 @@ router.post('/', signupLimiter, asyncHandler(async (req, res) => {
   if (verification) {
     const verifyUrl = `${frontendBaseUrl()}/verify-email?token=${verification.rawToken}`;
     sendVerificationEmail(adminEmail, verifyUrl, admin.name).catch((err) => {
-      console.error('[wedding-create] verification email send failed:', err.message);
+      req.log.error({ err: err.message }, 'wedding-create: verification email send failed');
     });
   }
 
@@ -341,7 +341,7 @@ router.post('/personal', signupLimiter, asyncHandler(async (req, res) => {
   if (verification) {
     const verifyUrl = `${frontendBaseUrl()}/verify-email?token=${verification.rawToken}`;
     sendVerificationEmail(ownerEmail, verifyUrl, owner.name).catch((err) => {
-      console.error('[personal-create] verification email send failed:', err.message);
+      req.log.error({ err: err.message }, 'personal-create: verification email send failed');
     });
   }
 

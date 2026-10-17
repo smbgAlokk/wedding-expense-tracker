@@ -4,9 +4,12 @@
 // required secrets in production; checkJoinCodeIndex() guards the sparse-index
 // invariant that Personal-workspace creation depends on (audit P-3).
 
+const boot = require('../utils/boot');
+
 const REQUIRED_PROD_ENV = [
   'JWT_SECRET',
   'MONGODB_URI',
+  'FRONTEND_URL',
   'GOOGLE_CLIENT_ID',
   'CLOUDINARY_CLOUD_NAME',
   'CLOUDINARY_API_KEY',
@@ -21,12 +24,17 @@ const REQUIRED_PROD_ENV = [
 // the previous inline SMTP-only check.) Dev is unaffected — missing values there
 // just degrade individual features.
 function checkEnv() {
-  if (process.env.NODE_ENV !== 'production') return;
+  if (process.env.NODE_ENV !== 'production') {
+    boot.step('Environment', 'info', `${process.env.NODE_ENV || 'development'} · production secret check skipped`);
+    return;
+  }
   const missing = REQUIRED_PROD_ENV.filter((k) => !process.env[k] || String(process.env[k]).trim() === '');
   if (missing.length) {
-    console.error(`[Preflight] FATAL: missing required env in production: ${missing.join(', ')}. Refusing to start.`);
+    boot.step('Environment', 'fail', `missing required env in production: ${missing.join(', ')}`);
+    boot.abort('Startup aborted — refusing to start without required secrets');
     process.exit(1);
   }
+  boot.step('Environment', 'ok', `production · all ${REQUIRED_PROD_ENV.length} required secrets present`);
 }
 
 // P-3: the joinCode unique index MUST be sparse/partial, otherwise the second
@@ -40,17 +48,20 @@ async function checkJoinCodeIndex() {
     const jc = indexes.find((i) => i.key && i.key.joinCode === 1);
     const safe = jc && (jc.sparse || jc.partialFilterExpression);
     if (jc && !safe) {
-      const base = '[Preflight] joinCode index is NOT sparse/partial. Run: node scripts/migrateWorkspaceIndexes.js';
+      const hint = 'Run: node scripts/migrateWorkspaceIndexes.js';
       const personalCount = await Wedding.countDocuments({ type: 'personal' });
       if (process.env.NODE_ENV === 'production' && personalCount > 0) {
-        console.error(`${base} A Personal workspace already exists — refusing to start.`);
+        boot.step('Indexes', 'fail', 'joinCode index is NOT sparse/partial and a Personal workspace exists', { hint });
+        boot.abort('Startup aborted — index migration required');
         process.exit(1);
       } else {
-        console.warn(`${base} (${personalCount} Personal workspace(s); non-fatal here, but Personal signups will fail until migrated)`);
+        boot.step('Indexes', 'warn', `joinCode index is NOT sparse/partial — Personal signups will fail until migrated (${personalCount} Personal workspace(s))`, { hint });
       }
+      return;
     }
+    boot.step('Indexes', 'ok', jc ? 'joinCode index is sparse' : 'joinCode index not created yet');
   } catch (err) {
-    console.warn('[Preflight] joinCode index check skipped:', err.message);
+    boot.step('Indexes', 'skip', `joinCode index check skipped: ${err.message}`);
   }
 }
 

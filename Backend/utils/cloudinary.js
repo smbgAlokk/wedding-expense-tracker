@@ -1,4 +1,5 @@
 const cloudinary = require('cloudinary').v2;
+const { logger } = require('./logger');
 
 // Configure Cloudinary from environment variables.
 // Fails gracefully — if not configured, receipt uploads are silently skipped.
@@ -71,7 +72,7 @@ const deleteFromCloudinary = async (publicId) => {
   try {
     await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
   } catch (err) {
-    console.warn('[Cloudinary] Failed to delete asset:', publicId, err.message);
+    logger.warn({ publicId, err: err.message }, 'Cloudinary asset delete failed');
   }
 };
 

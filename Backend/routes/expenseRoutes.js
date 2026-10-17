@@ -124,7 +124,7 @@ router.post('/', protect, receiptUpload, asyncHandler(async (req, res) => {
 
   if (req.file) {
     if (!isCloudinaryConfigured()) {
-      console.warn('[Receipt Upload] Cloudinary not configured — receipt skipped');
+      req.log.warn('receipt upload: Cloudinary not configured — receipt skipped');
       receiptWarning = 'Receipt storage is not configured. Expense saved without receipt.';
     } else {
       try {
@@ -133,7 +133,7 @@ router.post('/', protect, receiptUpload, asyncHandler(async (req, res) => {
         receiptUrl = result.url;
         receiptPublicId = result.publicId;
       } catch (uploadErr) {
-        console.error('[Receipt Upload] Cloudinary error:', uploadErr.message);
+        req.log.error({ err: uploadErr.message }, 'receipt upload: Cloudinary error');
         receiptWarning = 'Could not upload receipt. Expense saved — you can re-add the receipt later.';
       }
     }

@@ -31,9 +31,12 @@ const CSRF_COOKIE = 'csrf_token';
 
 const isProd = () => process.env.NODE_ENV === 'production';
 // Secure defaults to on in production, off in dev (so http://localhost works).
-// COOKIE_SECURE env override wins (string 'true'/'false').
-const cookieSecure = () =>
-  process.env.COOKIE_SECURE !== undefined ? process.env.COOKIE_SECURE === 'true' : isProd();
+// COOKIE_SECURE env override wins (string 'true'/'false'); blank counts as unset
+// so a copied-but-empty `COOKIE_SECURE=` can't disable Secure in production.
+const cookieSecure = () => {
+  const v = (process.env.COOKIE_SECURE || '').trim();
+  return v ? v === 'true' : isProd();
+};
 // SameSite=Lax works because the API is served same-origin via the Vercel
 // proxy (and the Vite dev proxy locally) — the cookie is first-party.
 const cookieSameSite = () => process.env.COOKIE_SAMESITE || 'lax';

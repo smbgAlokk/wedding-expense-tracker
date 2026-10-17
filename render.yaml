@@ -1,0 +1,48 @@
+# Render Blueprint — backend API (Render dashboard → New → Blueprint).
+# The frontend stays on Vercel and proxies /api/* here (Frontend/vercel.json).
+services:
+  - type: web
+    name: wedding-expense-tracker-api
+    runtime: node
+    rootDir: Backend
+    branch: main
+    # Free plan sleeps after 15 min idle (30-60 s cold start, Vercel proxy may 504).
+    plan: starter
+    # Pick the region closest to your MongoDB Atlas cluster.
+    region: singapore
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Client → Vercel proxy → Render edge: the real client IP is 2 hops back.
+      - key: TRUST_PROXY
+        value: "2"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

@@ -530,7 +530,7 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
     await sendPasswordResetEmail(normalizedEmail, resetUrl, resettable[0].name);
   } catch (err) {
     // Never leak whether sending succeeded; the token is already stored.
-    console.error('[forgot-password] email send failed:', err.message);
+    req.log.error({ err: err.message }, 'forgot-password: email send failed');
   }
 
   return generic();
@@ -698,7 +698,7 @@ router.post('/resend-verification', asyncHandler(async (req, res) => {
     await sendVerificationEmail(normalizedEmail, verifyUrl, unverified[0].name);
   } catch (err) {
     // Token is already stored; never leak whether sending succeeded.
-    console.error('[resend-verification] email send failed:', err.message);
+    req.log.error({ err: err.message }, 'resend-verification: email send failed');
   }
 
   return generic();

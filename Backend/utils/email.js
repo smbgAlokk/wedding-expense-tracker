@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { logger } = require('./logger');
 
 // Provider-agnostic SMTP. Works with Resend, SendGrid, Mailgun, Gmail, Mailtrap,
 // etc. — they all expose SMTP host/port/user/pass. Configure via env:
@@ -65,9 +66,9 @@ async function sendPasswordResetEmail(to, resetUrl, name) {
     // aggregators is functionally equivalent to publishing the token. Dev
     // keeps the convenience log so the flow stays testable without SMTP.
     if (process.env.NODE_ENV === 'production') {
-      console.error('[Email] CRITICAL: SMTP not configured in production. Password reset email NOT sent.');
+      logger.error('CRITICAL: SMTP not configured in production. Password reset email NOT sent.');
     } else {
-      console.warn('[Email] SMTP not configured (dev only). Password reset link:\n  ' + resetUrl);
+      logger.warn({ link: resetUrl }, 'SMTP not configured (dev only) — password reset link');
     }
     return { sent: false };
   }
@@ -110,9 +111,9 @@ async function sendVerificationEmail(to, verifyUrl, name) {
 
   if (!isEmailConfigured()) {
     if (process.env.NODE_ENV === 'production') {
-      console.error('[Email] CRITICAL: SMTP not configured in production. Verification email NOT sent.');
+      logger.error('CRITICAL: SMTP not configured in production. Verification email NOT sent.');
     } else {
-      console.warn('[Email] SMTP not configured (dev only). Verification link:\n  ' + verifyUrl);
+      logger.warn({ link: verifyUrl }, 'SMTP not configured (dev only) — email verification link');
     }
     return { sent: false };
   }

@@ -240,7 +240,7 @@ router.post('/coach', aiLimiter, protect, asyncHandler(async (req, res) => {
     const parsed = parseGeminiError(err);
     // Log the raw error server-side for operator diagnosis — but never
     // surface it over the wire.
-    console.error('[ai/coach] upstream init failed:', parsed.code, parsed.status || '-', '|', err?.message?.slice(0, 200) || '');
+    req.log.error({ code: parsed.code, status: parsed.status || '-', err: err?.message?.slice(0, 200) || '' }, 'ai/coach: upstream init failed');
     if (!res.writableEnded) {
       send('error', {
         code: parsed.code,
@@ -277,7 +277,7 @@ router.post('/coach', aiLimiter, protect, asyncHandler(async (req, res) => {
         // Counter update failure is non-fatal — log but don't blow up the
         // SSE response. The user got their answer; we just lost a counter
         // tick (worst case: they get one extra free request).
-        console.error('[ai/coach] quota increment failed:', err.message);
+        req.log.error({ err: err.message }, 'ai/coach: quota increment failed');
       }
     }
 
@@ -285,7 +285,7 @@ router.post('/coach', aiLimiter, protect, asyncHandler(async (req, res) => {
     res.end();
   } catch (err) {
     const parsed = parseGeminiError(err);
-    console.error('[ai/coach] mid-stream failed:', parsed.code, '|', err?.message?.slice(0, 200) || '');
+    req.log.error({ code: parsed.code, err: err?.message?.slice(0, 200) || '' }, 'ai/coach: mid-stream failed');
     if (!res.writableEnded) {
       send('error', {
         code: parsed.code,
