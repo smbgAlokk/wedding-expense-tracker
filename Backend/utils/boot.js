@@ -40,7 +40,7 @@ function mongoHint(err) {
   if (/ECONNREFUSED/i.test(msg)) {
     return 'Nothing is listening at that address. Is MongoDB running?';
   }
-  if (/timed out|ETIMEDOUT|Server selection/i.test(msg)) {
+  if (/whitelist|Could not connect to any servers|timed out|ETIMEDOUT|Server selection/i.test(msg)) {
     return 'Connection timed out. Add your current IP under Atlas → Network Access.';
   }
   return undefined;
