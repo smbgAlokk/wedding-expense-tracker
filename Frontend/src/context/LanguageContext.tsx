@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import { SUPPORTED_LANGUAGES } from '../i18n/translations';
+import { SUPPORTED_LANGUAGES } from '@/i18n';
 
 export type SupportedLanguage = typeof SUPPORTED_LANGUAGES[number];
 

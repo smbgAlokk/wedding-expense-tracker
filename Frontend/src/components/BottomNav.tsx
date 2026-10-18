@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useWedding } from '../context/WeddingContext';
-import { useLang } from '../context/LanguageContext';
+import { useWedding } from '@/context/WeddingContext';
+import { useLang } from '@/context/LanguageContext';
 
 interface NavItem {
   path: string;
@@ -13,33 +13,20 @@ interface NavItem {
 export default function BottomNav() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { isAdmin, features } = useWedding();
+  const { features } = useWedding();
   const { t } = useLang();
 
-  // Features-driven nav (Phase 2). Single-member verticals (Personal) drop the
-  // AllExpenses and Members tabs since neither makes sense — the lone owner
-  // sees their own list under MyExpenses and there's no one to manage.
+  // Settings is the last tab for every role — it holds the account (PIN / email),
+  // sign-out, and the "View Family Members" link. The 4th slot is per-vertical.
   const items: NavItem[] = [
     { path: '/dashboard', icon: '🏠', label: t('nav.home'), id: 'home' },
     { path: '/my-expenses', icon: '📋', label: t('nav.myExpenses'), id: 'my-expenses' },
     { path: '/add', icon: '+', label: t('nav.add'), isFab: true, id: 'add' },
+    features.multiMember
+      ? { path: '/all-expenses', icon: '📊', label: t('nav.all'), id: 'all' }
+      : { path: '/insights', icon: '📊', label: t('nav.insights'), id: 'insights' },
+    { path: '/settings', icon: '⚙️', label: t('nav.settings'), id: 'settings' },
   ];
-  if (features.multiMember) {
-    items.push({ path: '/all-expenses', icon: '📊', label: t('nav.all'), id: 'all' });
-    items.push({
-      path: isAdmin ? '/settings' : '/members',
-      icon: isAdmin ? '⚙️' : '👥',
-      label: isAdmin ? t('nav.settings') : t('nav.members'),
-      id: isAdmin ? 'settings' : 'members',
-    });
-  } else {
-    // Personal: admin-only by construction (the lone owner). Insights
-    // (L1 — Reports) takes the slot Wedding uses for Members; Settings
-    // remains the last tab. Final order: Home · MyExpenses · + · Insights ·
-    // Settings (5 tabs, no overcrowding).
-    items.push({ path: '/insights', icon: '📊', label: t('nav.insights'), id: 'insights' });
-    items.push({ path: '/settings', icon: '⚙️', label: t('nav.settings'), id: 'settings' });
-  }
 
   return (
     <nav className="bottom-nav" id="bottom-navigation">

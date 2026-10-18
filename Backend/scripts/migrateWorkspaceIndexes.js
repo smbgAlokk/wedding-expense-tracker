@@ -27,7 +27,7 @@ async function main() {
   await mongoose.connect(MONGODB_URI);
   console.log('[migrate] Connected.');
 
-  const Wedding = require('../models/Wedding');
+  const Wedding = require('../src/models/Wedding');
   const collection = Wedding.collection;
 
   // 1. List existing indexes and check joinCode.

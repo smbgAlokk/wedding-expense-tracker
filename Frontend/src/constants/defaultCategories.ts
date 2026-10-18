@@ -6,8 +6,8 @@
 // Adding a new vertical: add it here AND in the backend constants file (the
 // route layer enforces the canonical list, not the frontend).
 
-import type { Category, WorkspaceType, WorkspaceFeatures, BudgetBucket } from '../types';
-import { DEFAULT_WORKSPACE_TYPE, BUDGET_BUCKETS, DEFAULT_BUCKET } from '../types';
+import type { Category, WorkspaceType, WorkspaceFeatures, BudgetBucket } from '@/types';
+import { DEFAULT_WORKSPACE_TYPE, BUDGET_BUCKETS, DEFAULT_BUCKET } from '@/types';
 
 const WEDDING_DEFAULTS: Category[] = [
   // Most-used core

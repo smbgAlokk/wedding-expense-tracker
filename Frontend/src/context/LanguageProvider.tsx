@@ -4,7 +4,7 @@ import {
   translateServerMessage,
   SUPPORTED_LANGUAGES,
   DEFAULT_LANGUAGE,
-} from '../i18n/translations';
+} from '@/i18n';
 import { LanguageContext, type LanguageContextType, type SupportedLanguage } from './LanguageContext';
 
 const STORAGE_KEY = 'language';
