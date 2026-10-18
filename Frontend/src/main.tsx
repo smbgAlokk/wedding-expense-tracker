@@ -33,7 +33,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
                 duration: 3000,
                 className: 'toast-custom',
                 style: {
-                  background: 'rgba(30, 20, 50, 0.95)',
+                  background: 'rgba(34, 35, 40, 0.96)', // logo charcoal
                   color: '#F8FAFC',
                   border: '1px solid rgba(255,255,255,0.1)',
                   borderRadius: '16px',

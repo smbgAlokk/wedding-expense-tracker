@@ -79,11 +79,11 @@ export const hi: Record<TranslationKey, string> = {
   // Multi-vertical type picker (Phase 2)
   'pickType.header': 'आप क्या ट्रैक करना चाहते हैं?',
   'pickType.subtitle': 'अपनी ज़रूरत के हिसाब से चुनें — एक से ज़्यादा भी बना सकते हैं।',
-  'pickType.wedding.title': '💒 शादी',
+  'pickType.wedding.title': 'शादी',
   'pickType.wedding.desc': 'पूरे परिवार के साथ शादी के खर्चे ट्रैक करें।',
-  'pickType.personal.title': '💰 पर्सनल बजट',
+  'pickType.personal.title': 'पर्सनल बजट',
   'pickType.personal.desc': 'अपनी महीने की आमदनी और खर्च खुद के लिए ट्रैक करें।',
-  'pickType.trip.title': '✈️ ट्रिप',
+  'pickType.trip.title': 'ट्रिप',
   'pickType.trip.desc': 'दोस्तों के साथ ट्रिप के खर्चे ट्रैक करें और बाँटें।',
   'pickType.trip.soonBadge': 'जल्द आ रहा है',
 

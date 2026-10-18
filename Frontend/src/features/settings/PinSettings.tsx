@@ -5,6 +5,7 @@ import { useLang } from '@/context/LanguageContext';
 import { changePin } from '@/api';
 import PinField from '@/components/PinField';
 import { pinErrorMessage, pinFormError } from '@/utils/pinErrors';
+import RollText from '@/components/RollText';
 
 const EMPTY = { currentPin: '', newPin: '', confirmPin: '' };
 
@@ -73,17 +74,17 @@ export default function PinSettings() {
           <div style={{ display: 'flex', gap: 8 }}>
             {hasPin && (
               <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { setOpen(false); setForm(EMPTY); }}>
-                {t('common.cancel')}
+                <RollText>{t('common.cancel')}</RollText>
               </button>
             )}
             <button type="submit" className="btn btn-primary" style={{ flex: 2 }} disabled={saving} id="btn-save-pin">
-              {saving ? t('pin.saving') : t('pin.setBtn')}
+              <RollText>{saving ? t('pin.saving') : t('pin.setBtn')}</RollText>
             </button>
           </div>
         </form>
       ) : (
         <button className="btn btn-secondary btn-full" style={{ marginTop: 12 }} onClick={() => setOpen(true)} id="btn-change-pin">
-          {t('pin.changeBtn')}
+          <RollText>{t('pin.changeBtn')}</RollText>
         </button>
       )}
     </div>

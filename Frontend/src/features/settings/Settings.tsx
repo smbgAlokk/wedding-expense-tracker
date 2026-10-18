@@ -12,8 +12,10 @@ import LanguageToggle from '@/components/LanguageToggle';
 import ThemeToggle from '@/components/ThemeToggle';
 import CoachConsentModal from '@/features/coach/CoachConsentModal';
 import AccountCard from './AccountCard';
+import LockSwitch from '@/components/LockSwitch';
 import type { Category, BudgetBucket } from '@/types';
 import { BUDGET_BUCKETS, DEFAULT_BUDGET_ALLOCATION } from '@/types';
+import RollText from '@/components/RollText';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -284,7 +286,7 @@ export default function Settings() {
             {features.multiMember ? t('settings.weddingDetails') : t('settings.budgetDetails')}
           </h3>
           {isAdmin && !editing && (
-            <button className="btn btn-secondary btn-xs" onClick={() => setEditing(true)}>{t('common.edit')}</button>
+            <button className="btn btn-secondary btn-xs" onClick={() => setEditing(true)}><RollText>{t('common.edit')}</RollText></button>
           )}
         </div>
 
@@ -366,7 +368,7 @@ export default function Settings() {
                       onClick={() => set('payDay', '')}
                       aria-label={t('settings.payDay.clear')}
                     >
-                      {t('settings.payDay.clear')}
+                      <RollText>{t('settings.payDay.clear')}</RollText>
                     </button>
                   )}
                 </div>
@@ -437,9 +439,9 @@ export default function Settings() {
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
               <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving} style={{ flex: 1 }}>
-                {saving ? t('settings.saving') : t('settings.saveBtn')}
+                <RollText>{saving ? t('settings.saving') : t('settings.saveBtn')}</RollText>
               </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => setEditing(false)}>{t('common.cancel')}</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setEditing(false)}><RollText>{t('common.cancel')}</RollText></button>
             </div>
           </>
         ) : (
@@ -553,7 +555,7 @@ export default function Settings() {
                 fontWeight: 600,
               }}
             >
-              {t('settings.suggestedCategories', { count: missingDefaults.length })}
+              <RollText>{t('settings.suggestedCategories', { count: missingDefaults.length })}</RollText>
             </button>
           )}
 
@@ -585,7 +587,7 @@ export default function Settings() {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <input className="form-input" placeholder={t('settings.newCategoryPlaceholder')} value={newCat.name} onChange={e => setNewCat(p => ({ ...p, name: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCategory(); } }} style={{ flex: 1, minHeight: 44, fontSize: '0.9rem' }} />
-            <button className="btn btn-primary btn-sm" onClick={addCategory}>{t('settings.addCategory')}</button>
+            <button className="btn btn-primary btn-sm" onClick={addCategory}><RollText>{t('settings.addCategory')}</RollText></button>
           </div>
           {/* Categories auto-save on add / remove — no separate Save button needed. */}
         </div>
@@ -603,7 +605,7 @@ export default function Settings() {
             className="btn btn-secondary btn-sm"
             onClick={() => { navigator.clipboard.writeText(wedding.joinCode); toast.success(t('common.copied')); }}
           >
-            {t('settings.copy')}
+            <RollText>{t('settings.copy')}</RollText>
           </button>
           {isAdmin && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-color)', textAlign: 'left' }}>
@@ -613,18 +615,13 @@ export default function Settings() {
                   {t(approvalOn ? 'settings.approvalHintOn' : 'settings.approvalHintOff')}
                 </p>
               </div>
-              <button
-                type="button"
-                className={`ai-toggle ${approvalOn ? 'is-on' : ''}`}
-                onClick={toggleJoinApproval}
+              <LockSwitch
+                checked={approvalOn}
+                onChange={() => toggleJoinApproval()}
                 disabled={approvalBusy}
-                role="switch"
-                aria-checked={approvalOn}
-                aria-label={t('settings.approvalLabel')}
+                label={t('settings.approvalLabel')}
                 id="toggle-join-approval"
-              >
-                <span className="ai-toggle-knob" />
-              </button>
+              />
             </div>
           )}
         </div>
@@ -633,12 +630,12 @@ export default function Settings() {
       {/* Members shortcut — single-member verticals hide this (no one else exists). */}
       {features.multiMember && (
         <button className="btn btn-secondary btn-full" onClick={() => navigate('/members')} style={{ marginBottom: 12 }}>
-          {t('settings.viewMembers')}
+          <RollText>{t('settings.viewMembers')}</RollText>
         </button>
       )}
 
       <button className="btn btn-danger btn-full" onClick={() => setShowLeaveModal(true)} id="btn-logout" style={{ marginBottom: 40 }}>
-        {t('settings.signOut')}
+        <RollText>{t('settings.signOut')}</RollText>
       </button>
 
       {/* Leave Confirmation Modal */}
@@ -652,10 +649,10 @@ export default function Settings() {
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <button className="btn btn-danger btn-full btn-lg" onClick={handleLogout} id="btn-confirm-leave">
-                {t('settings.signOutYes')}
+                <RollText>{t('settings.signOutYes')}</RollText>
               </button>
               <button className="btn btn-ghost btn-full" onClick={() => setShowLeaveModal(false)} id="btn-cancel-leave">
-                {t('common.cancel')}
+                <RollText>{t('common.cancel')}</RollText>
               </button>
             </div>
           </div>

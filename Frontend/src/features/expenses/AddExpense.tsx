@@ -7,6 +7,7 @@ import { addExpense } from '@/api';
 import { cacheInvalidate } from '@/utils/dataCache';
 import LanguageToggle from '@/components/LanguageToggle';
 import ThemeToggle from '@/components/ThemeToggle';
+import RollText from '@/components/RollText';
 
 /** Maximum expense amount (safety guard against accidental huge entries) */
 const MAX_AMOUNT = 99_99_99_999; // ~100 crore
@@ -313,7 +314,7 @@ export default function AddExpense() {
             />
           </div>
           <button className="btn btn-primary btn-full btn-lg" onClick={goToStep3} id="btn-next-step3">
-            {t('common.continue')}
+            <RollText>{t('common.continue')}</RollText>
           </button>
         </div>
       )}
@@ -385,7 +386,7 @@ export default function AddExpense() {
                     style={{ color: 'var(--danger)', flexShrink: 0, opacity: loading ? 0.5 : 1 }}
                     aria-label={t('receipt.remove')}
                   >
-                    ✕ {t('receipt.remove')}
+                    <RollText>✕ {t('receipt.remove')}</RollText>
                   </button>
                 </div>
               </div>
@@ -440,12 +441,12 @@ export default function AddExpense() {
             onClick={handleSubmit} disabled={loading}
             id="btn-save-expense" style={{ marginTop: 8 }}
           >
-            {!loading && t('add.submitBtn')}
+            <RollText>{!loading && t('add.submitBtn')}
             {loading && phase === 'uploading' && uploadPercent < 100 &&
               t('add.uploadingProgress', { percent: uploadPercent })}
             {loading && (phase === 'finalizing' || (phase === 'uploading' && uploadPercent >= 100)) &&
               t('add.finalizing')}
-            {loading && !phase && t('add.saving')}
+            {loading && !phase && t('add.saving')}</RollText>
           </button>
 
           {/* Live upload progress bar — only shown while bytes are in flight */}

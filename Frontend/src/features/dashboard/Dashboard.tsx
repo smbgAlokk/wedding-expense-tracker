@@ -4,12 +4,14 @@ import toast from 'react-hot-toast';
 import { useWedding } from '@/context/WeddingContext';
 import { useLang } from '@/context/LanguageContext';
 import { fmtAmount, fmtDate } from '@/utils/format';
+import { avatarColor } from '@/utils/avatarColor';
 import { getCurrentPayCycle } from './payCycle';
 import { getExpenseSummary } from '@/api';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageToggle from '@/components/LanguageToggle';
 import ExpenseDetailSheet from '@/features/expenses/ExpenseDetailSheet';
 import BudgetScoreCard from './BudgetScoreCard';
+import RollText from '@/components/RollText';
 
 // Format the selected calendar month label ("May 2026" / "मई 2026") for the
 // Personal-vertical month switcher.
@@ -56,12 +58,6 @@ function useCountUp(value: number, duration = 700): number {
   return display;
 }
 
-const AVATAR_COLORS = ['#D84381','#7C3AED','#2563EB','#059669','#D97706','#DC2626','#9333EA','#E11D48'];
-function getColor(name: string): string {
-  let h = 0;
-  for (let i = 0; i < (name || '').length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
-}
 
 // Stable color-per-category for the category breakdown bars. Same hash trick as
 // avatars so the same category always lights up the same hue across renders.
@@ -350,7 +346,7 @@ export default function Dashboard() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <LanguageToggle />
           <ThemeToggle />
-          <div className="avatar" style={{ background: getColor(member?.name || ''), width: 44, height: 44, fontSize: '1rem' }}>
+          <div className="avatar" style={{ background: avatarColor(member?.name || ''), width: 44, height: 44, fontSize: '1rem' }}>
             {(member?.name || 'U')[0].toUpperCase()}
           </div>
         </div>
@@ -366,8 +362,8 @@ export default function Dashboard() {
             className="btn btn-ghost"
             style={{ minWidth: 44, padding: '6px 10px', fontSize: '1rem' }}
           >
-            ◀
-          </button>
+            <RollText>◀
+          </RollText></button>
           <button
             type="button"
             onClick={goToCurrentMonth}
@@ -377,8 +373,8 @@ export default function Dashboard() {
             aria-label={t('dashboard.goToCurrentMonth')}
             title={isCurrentMonth ? '' : t('dashboard.goToCurrentMonth')}
           >
-            {fmtMonth(selectedMonth, lang)}
-            {!isCurrentMonth && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 6 }}>↻</span>}
+            <RollText>{fmtMonth(selectedMonth, lang)}
+            {!isCurrentMonth && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 6 }}>↻</span>}</RollText>
           </button>
           <button
             type="button"
@@ -387,8 +383,8 @@ export default function Dashboard() {
             className="btn btn-ghost"
             style={{ minWidth: 44, padding: '6px 10px', fontSize: '1rem' }}
           >
-            ▶
-          </button>
+            <RollText>▶
+          </RollText></button>
         </div>
       )}
 
@@ -745,9 +741,9 @@ export default function Dashboard() {
                   className="btn btn-ghost btn-xs cat-show-more"
                   onClick={() => setShowAllCats(s => !s)}
                 >
-                  {showAllCats
+                  <RollText>{showAllCats
                     ? t('dashboard.showLess')
-                    : t('dashboard.showMoreCats', { count: summary.categoryBreakdown.length - 6 })}
+                    : t('dashboard.showMoreCats', { count: summary.categoryBreakdown.length - 6 })}</RollText>
                 </button>
               )}
             </div>
@@ -761,7 +757,7 @@ export default function Dashboard() {
             <div className="stagger">
               {summary.memberBreakdown.slice(0, 5).map((m, i) => (
                 <div key={m._id} className={`expense-item ${i === 0 ? 'podium-1' : i === 1 ? 'podium-2' : i === 2 ? 'podium-3' : ''}`}>
-                  <div className="avatar" style={{ background: getColor(m.name), width: 42, height: 42, fontSize: '0.95rem' }}>
+                  <div className="avatar" style={{ background: avatarColor(m.name), width: 42, height: 42, fontSize: '0.95rem' }}>
                     {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (m.name || 'U')[0].toUpperCase()}
                   </div>
                   <div className="expense-info">
@@ -789,7 +785,7 @@ export default function Dashboard() {
               className="btn btn-ghost btn-xs"
               onClick={() => navigate(features.multiMember ? '/all-expenses' : '/my-expenses')}
             >
-              {t('dashboard.viewAll')}
+              <RollText>{t('dashboard.viewAll')}</RollText>
             </button>
           )}
         </div>
@@ -804,7 +800,7 @@ export default function Dashboard() {
               style={{ marginTop: 'var(--space-5)' }}
               onClick={() => navigate('/add')}
             >
-              {t('dashboard.addFirstExpense')}
+              <RollText>{t('dashboard.addFirstExpense')}</RollText>
             </button>
           </div>
         ) : (
@@ -879,7 +875,7 @@ export default function Dashboard() {
               toast.success(t('common.codeCopied'));
             }}
           >
-            {t('dashboard.copyCode')}
+            <RollText>{t('dashboard.copyCode')}</RollText>
           </button>
         </div>
       )}

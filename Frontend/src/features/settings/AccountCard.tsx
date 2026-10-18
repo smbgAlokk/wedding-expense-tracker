@@ -4,6 +4,7 @@ import { useWedding } from '@/context/WeddingContext';
 import { useLang } from '@/context/LanguageContext';
 import { resendVerification } from '@/api';
 import PinSettings from './PinSettings';
+import RollText from '@/components/RollText';
 
 // Mirrors RESEND_COOLDOWN_MS in auth.routes.js; the server is the real gate.
 const VERIFY_RESEND_COOLDOWN_S = 60;
@@ -74,7 +75,7 @@ export default function AccountCard() {
             disabled={sending || cooldown > 0}
             id="btn-account-resend-verification"
           >
-            {sending ? t('verify.resending') : cooldown > 0 ? t('account.resendIn', { sec: cooldown }) : t('verify.resendBtn')}
+            <RollText>{sending ? t('verify.resending') : cooldown > 0 ? t('account.resendIn', { sec: cooldown }) : t('verify.resendBtn')}</RollText>
           </button>
         </>
       )}

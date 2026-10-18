@@ -4,6 +4,7 @@ import { useLang } from '@/context/LanguageContext';
 import { fmtSimple, fmtDate } from '@/utils/format';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import ReceiptViewer from './ReceiptViewer';
+import RollText from '@/components/RollText';
 
 /**
  * ExpenseDetailSheet — centered modal rendered via React Portal to
@@ -194,7 +195,7 @@ export default function ExpenseDetailSheet({
         {/* Actions */}
         <div className="sheet-actions">
           <button className="btn btn-secondary btn-full" onClick={onClose} id="btn-close-sheet">
-            {t('detail.close')}
+            <RollText>{t('detail.close')}</RollText>
           </button>
           {onDelete && (
             <button
@@ -208,7 +209,7 @@ export default function ExpenseDetailSheet({
                 fontWeight: 600,
               }}
             >
-              {t('common.delete')}
+              <RollText>{t('common.delete')}</RollText>
             </button>
           )}
         </div>

@@ -11,6 +11,7 @@ import ExpenseDetailSheet from './ExpenseDetailSheet';
 import Loader from '@/components/Loader';
 import { SortableFilterableTableHeader, SortState, FilterState } from '@/components/SortableFilterableTableHeader';
 import './AllExpensesTable.css';
+import RollText from '@/components/RollText';
 
 // How long to wait after the last sort/filter/page change before hitting the API.
 // Collapses rapid header clicks (asc → desc → off) and keystrokes into ONE request.
@@ -214,14 +215,14 @@ export default function AllExpenses() {
           className={`btn btn-xs ${filter === 'all' ? 'btn-primary' : 'btn-secondary'}`}
           onClick={() => { setFilter('all'); setPage(1); }}
           style={{ flexShrink: 0 }}
-        >{t('all.filterAll')}</button>
+        ><RollText>{t('all.filterAll')}</RollText></button>
         {categories.map(cat => (
           <button
             key={cat.name}
             className={`btn btn-xs ${filter === cat.name ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => { setFilter(cat.name); setPage(1); }}
             style={{ flexShrink: 0 }}
-          >{cat.icon} {tCat(cat.name)}</button>
+          ><RollText>{cat.icon} {tCat(cat.name)}</RollText></button>
         ))}
       </div>
 
@@ -405,11 +406,11 @@ export default function AllExpenses() {
           {/* Pagination */}
           {pagination && pagination.pages > 1 && (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 24 }}>
-              <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>{t('all.prev')}</button>
+              <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}><RollText>{t('all.prev')}</RollText></button>
               <span className="text-tnum" style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600, minWidth: 50, textAlign: 'center' }}>
                 {page} / {pagination.pages}
               </span>
-              <button className="btn btn-secondary btn-sm" disabled={page >= pagination.pages} onClick={() => setPage(p => p + 1)}>{t('all.next')}</button>
+              <button className="btn btn-secondary btn-sm" disabled={page >= pagination.pages} onClick={() => setPage(p => p + 1)}><RollText>{t('all.next')}</RollText></button>
             </div>
           )}
         </>

@@ -8,6 +8,7 @@ import { fetchOnce } from '@/utils/dataCache';
 import Loader from '@/components/Loader';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageToggle from '@/components/LanguageToggle';
+import RollText from '@/components/RollText';
 
 type Phase = 'verifying' | 'success' | 'already' | 'error' | 'invalid';
 
@@ -89,7 +90,7 @@ export default function VerifyEmailPage() {
         id="btn-verify-continue"
         autoFocus
       >
-        {t(isAuthenticated ? 'verify.successCtaDashboard' : 'verify.successCta')}
+        <RollText>{t(isAuthenticated ? 'verify.successCtaDashboard' : 'verify.successCta')}</RollText>
       </button>,
     );
   } else if (phase === 'error') {
@@ -98,7 +99,7 @@ export default function VerifyEmailPage() {
       t('verify.errorTitle'),
       t('verify.errorBody'),
       <button className="btn btn-primary btn-full btn-lg" onClick={retry} id="btn-verify-retry" autoFocus>
-        {t('verify.retry')}
+        <RollText>{t('verify.retry')}</RollText>
       </button>,
     );
   } else {
@@ -111,7 +112,7 @@ export default function VerifyEmailPage() {
           <p style={{ fontSize: '0.92rem', lineHeight: 1.6 }}>{t('verify.resendSent')}</p>
         </div>
       ) : (
-        <form onSubmit={handleResend} style={{ textAlign: 'left' }}>
+        <form className="form-card" onSubmit={handleResend} style={{ textAlign: 'left' }}>
           <h2 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: 'var(--space-3)', textAlign: 'center' }}>{t('verify.resendCta')}</h2>
           <div className="form-group">
             <label className="form-label" htmlFor="input-verify-resend-email">{t('verify.resendEmailLabel')}</label>
@@ -128,7 +129,7 @@ export default function VerifyEmailPage() {
             />
           </div>
           <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={resending} id="btn-verify-resend" style={{ marginTop: 8 }}>
-            {resending ? t('verify.resending') : t('verify.resendBtn')}
+            <RollText>{resending ? t('verify.resending') : t('verify.resendBtn')}</RollText>
           </button>
         </form>
       ),

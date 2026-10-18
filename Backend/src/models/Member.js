@@ -230,20 +230,6 @@ memberSchema.virtual('expenses', {
   foreignField: 'memberId'
 });
 
-// Generate avatar color from name
-memberSchema.methods.getAvatarColor = function() {
-  const colors = [
-    '#D84381', '#7C3AED', '#2563EB', '#059669',
-    '#D97706', '#DC2626', '#7C2D12', '#1D4ED8',
-    '#9333EA', '#E11D48'
-  ];
-  let hash = 0;
-  for (let i = 0; i < this.name.length; i++) {
-    hash = this.name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return colors[Math.abs(hash) % colors.length];
-};
-
 // Ensure password is never included in toJSON
 memberSchema.methods.toJSON = function() {
   const obj = this.toObject();

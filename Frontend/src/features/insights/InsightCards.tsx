@@ -11,6 +11,7 @@ import {
   type AnalyticsInput,
   type Insight,
 } from './insightRules';
+import RollText from '@/components/RollText';
 
 /**
  * L2 — Smart Insights cards on top of the /insights page.
@@ -85,7 +86,7 @@ export default function InsightCards({ analytics }: Props) {
           onClick={handleRestoreAll}
           aria-label={t('insights.dismissed.restoreAria')}
         >
-          {t('insights.dismissed.restore', { count: dismissed.size })}
+          <RollText>{t('insights.dismissed.restore', { count: dismissed.size })}</RollText>
         </button>
       </section>
     );
@@ -132,7 +133,7 @@ export default function InsightCards({ analytics }: Props) {
           className="btn btn-ghost btn-xs insights-cards-show-dismissed"
           onClick={() => setShowDismissed(true)}
         >
-          {t('insights.dismissed.show', { count: dismissed.size })}
+          <RollText>{t('insights.dismissed.show', { count: dismissed.size })}</RollText>
         </button>
       )}
       {showDismissed && (
@@ -141,7 +142,7 @@ export default function InsightCards({ analytics }: Props) {
           className="btn btn-ghost btn-xs insights-cards-show-dismissed"
           onClick={() => setShowDismissed(false)}
         >
-          {t('insights.dismissed.hide')}
+          <RollText>{t('insights.dismissed.hide')}</RollText>
         </button>
       )}
     </section>

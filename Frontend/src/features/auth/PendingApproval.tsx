@@ -7,6 +7,7 @@ import { pinErrorMessage } from '@/utils/pinErrors';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageToggle from '@/components/LanguageToggle';
 import type { Member } from '@/types';
+import RollText from '@/components/RollText';
 
 const POLL_MS = 15_000;
 
@@ -68,9 +69,9 @@ export default function PendingApproval() {
         <p className="text-muted" style={{ fontSize: '0.82rem', marginBottom: 28, lineHeight: 1.6 }}>{t('pending.hint')}</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button className="btn btn-primary btn-full btn-lg" onClick={() => check(true)} disabled={checking} id="btn-pending-check">
-            {checking ? t('join.checking') : t('pending.checkNow')}
+            <RollText>{checking ? t('join.checking') : t('pending.checkNow')}</RollText>
           </button>
-          <button className="btn btn-ghost btn-full" onClick={logout} id="btn-pending-signout">{t('settings.signOut')}</button>
+          <button className="btn btn-ghost btn-full" onClick={logout} id="btn-pending-signout"><RollText>{t('settings.signOut')}</RollText></button>
         </div>
       </div>
     </div>

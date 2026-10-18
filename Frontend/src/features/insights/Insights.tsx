@@ -20,6 +20,7 @@ import type { RangePreset } from './TimeRangePicker';
 import Loader from '@/components/Loader';
 import InsightCards from './InsightCards';
 import CoachSection from '@/features/coach/CoachSection';
+import RollText from '@/components/RollText';
 
 /**
  * L1 — Insights page (Personal vertical only).
@@ -452,9 +453,9 @@ function CategoryBreakdownSection({
             onClick={() => setShowAll((s) => !s)}
             style={{ width: '100%', marginTop: 4, borderTop: '1px solid var(--divider)', paddingTop: 10, borderRadius: 0 }}
           >
-            {showAll
+            <RollText>{showAll
               ? t('dashboard.showLess')
-              : t('dashboard.showMoreCats', { count: categoryBreakdown.length - 8 })}
+              : t('dashboard.showMoreCats', { count: categoryBreakdown.length - 8 })}</RollText>
           </button>
         )}
       </div>
