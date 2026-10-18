@@ -10,6 +10,7 @@ import ExpenseDetailSheet from './ExpenseDetailSheet';
 import Loader from '@/components/Loader';
 import { SortableFilterableTableHeader, SortState, FilterState } from '@/components/SortableFilterableTableHeader';
 import './AllExpensesTable.css';
+import RollText from '@/components/RollText';
 
 export default function MyExpenses() {
   const navigate = useNavigate();
@@ -170,14 +171,14 @@ export default function MyExpenses() {
             className={`btn btn-xs ${filter === 'all' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setFilter('all')}
             style={{ flexShrink: 0 }}
-          >{t('all.filterAll')}</button>
+          ><RollText>{t('all.filterAll')}</RollText></button>
           {usedCategories.map(cat => (
             <button
               key={cat.name}
               className={`btn btn-xs ${filter === cat.name ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setFilter(cat.name)}
               style={{ flexShrink: 0 }}
-            >{cat.icon} {tCat(cat.name)}</button>
+            ><RollText>{cat.icon} {tCat(cat.name)}</RollText></button>
           ))}
         </div>
       )}
@@ -189,7 +190,7 @@ export default function MyExpenses() {
             {t('my.showingFiltered', { count: displayedExpenses.length, total: expenses.length })}
           </span>
           <button className="btn btn-xs btn-secondary" onClick={clearFilters} style={{ flexShrink: 0 }}>
-            {t('my.clearFilters')}
+            <RollText>{t('my.clearFilters')}</RollText>
           </button>
         </div>
       )}
@@ -201,7 +202,7 @@ export default function MyExpenses() {
           <div className="emoji">📝</div>
           <h3>{t('my.empty')}</h3>
           <p style={{ marginBottom: 20 }}>{t('my.emptyHint')}</p>
-          <button className="btn btn-primary" onClick={() => navigate('/add')}>{t('my.addBtn')}</button>
+          <button className="btn btn-primary" onClick={() => navigate('/add')}><RollText>{t('my.addBtn')}</RollText></button>
         </div>
       ) : (
         <>
@@ -213,7 +214,7 @@ export default function MyExpenses() {
               <div className="surface-card empty-state" style={{ padding: 'var(--space-12) var(--space-5)' }}>
                 <div className="emoji">🔍</div>
                 <h3>{t('my.emptyFiltered')}</h3>
-                <button className="btn btn-secondary btn-sm" onClick={clearFilters} style={{ marginTop: 16 }}>{t('my.clearFilters')}</button>
+                <button className="btn btn-secondary btn-sm" onClick={clearFilters} style={{ marginTop: 16 }}><RollText>{t('my.clearFilters')}</RollText></button>
               </div>
             ) : (
               <div className="stagger">
@@ -303,7 +304,7 @@ export default function MyExpenses() {
                         <div className="empty-state" style={{ padding: 0, boxShadow: 'none', background: 'transparent' }}>
                           <div className="emoji">🔍</div>
                           <h3>{t('my.emptyFiltered')}</h3>
-                          <button className="btn btn-secondary btn-sm" onClick={clearFilters} style={{ marginTop: 16 }}>{t('my.clearFilters')}</button>
+                          <button className="btn btn-secondary btn-sm" onClick={clearFilters} style={{ marginTop: 16 }}><RollText>{t('my.clearFilters')}</RollText></button>
                         </div>
                       </td>
                     </tr>

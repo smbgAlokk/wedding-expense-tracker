@@ -5,6 +5,7 @@ import { useLang } from '@/context/LanguageContext';
 import { resetPassword } from '@/api';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageToggle from '@/components/LanguageToggle';
+import RollText from '@/components/RollText';
 
 export default function ResetPasswordPage() {
   const { t, tServer } = useLang();
@@ -50,14 +51,14 @@ export default function ResetPasswordPage() {
         <div style={{ fontSize: '3rem', marginBottom: 'var(--space-4)' }}>⚠️</div>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 'var(--space-3)' }}>{t('reset.invalidTitle')}</h1>
         <p className="text-muted" style={{ fontSize: '0.92rem', marginBottom: 24, lineHeight: 1.6 }}>{t('reset.invalidBody')}</p>
-        <button className="btn btn-primary btn-full btn-lg" onClick={() => navigate('/')}>{t('reset.goToLogin')}</button>
+        <button className="btn btn-primary btn-full btn-lg" onClick={() => navigate('/')}><RollText>{t('reset.goToLogin')}</RollText></button>
       </div>
     );
   }
 
   return wrapper(
-    <div className="animate-in" style={{ width: '100%', maxWidth: 420, margin: '0 auto' }}>
-      <h1 style={{ fontSize: '1.6rem', fontWeight: 700, marginBottom: 'var(--space-3)' }}>{t('reset.header')}</h1>
+    <div className="animate-in form-card" style={{ width: '100%', maxWidth: 420, margin: '0 auto' }}>
+      <h1 style={{ fontSize: '1.6rem', marginBottom: 'var(--space-3)' }}>{t('reset.header')}</h1>
       <p className="text-muted" style={{ fontSize: '0.92rem', marginBottom: 24 }}>{t('reset.subtitle')}</p>
       <form onSubmit={handleSubmit}>
         <div className="form-group">
@@ -80,7 +81,7 @@ export default function ResetPasswordPage() {
           )}
         </div>
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-reset" style={{ marginTop: 8 }}>
-          {loading ? t('reset.resetting') : t('reset.submitBtn')}
+          <RollText>{loading ? t('reset.resetting') : t('reset.submitBtn')}</RollText>
         </button>
       </form>
     </div>

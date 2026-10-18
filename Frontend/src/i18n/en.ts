@@ -76,11 +76,11 @@ export const en = {
   // Multi-vertical type picker (Phase 2)
   'pickType.header': 'What do you want to track?',
   'pickType.subtitle': 'Pick the kind of workspace that fits — you can create more than one.',
-  'pickType.wedding.title': '💒 Wedding',
+  'pickType.wedding.title': 'Wedding',
   'pickType.wedding.desc': 'Track wedding expenses with your whole family.',
-  'pickType.personal.title': '💰 Personal Budget',
+  'pickType.personal.title': 'Personal Budget',
   'pickType.personal.desc': 'Track your own monthly income and spending.',
-  'pickType.trip.title': '✈️ Trip',
+  'pickType.trip.title': 'Trip',
   'pickType.trip.desc': 'Track group travel expenses & split with friends.',
   'pickType.trip.soonBadge': 'Coming soon',
 

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useLang } from '@/context/LanguageContext';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
+import RollText from '@/components/RollText';
 
 /**
  * L3 — AI Coach consent modal.
@@ -78,7 +79,7 @@ export default function CoachConsentModal({ open, onCancel, onAccept, busy }: Pr
             onClick={onCancel}
             disabled={busy}
           >
-            {t('common.cancel')}
+            <RollText>{t('common.cancel')}</RollText>
           </button>
           <button
             type="button"
@@ -86,7 +87,7 @@ export default function CoachConsentModal({ open, onCancel, onAccept, busy }: Pr
             onClick={onAccept}
             disabled={busy}
           >
-            {busy ? t('coach.consent.busy') : t('coach.consent.accept')}
+            <RollText>{busy ? t('coach.consent.busy') : t('coach.consent.accept')}</RollText>
           </button>
         </div>
       </div>

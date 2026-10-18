@@ -5,6 +5,7 @@ import { useLang } from '@/context/LanguageContext';
 import { useAICoach } from './AICoachContext';
 import { streamCoachReply } from '@/api';
 import { renderMarkdownLite } from './markdownLite';
+import RollText from '@/components/RollText';
 
 /**
  * L3 — AI Coach on the /insights page.
@@ -226,7 +227,7 @@ export default function CoachSection({ analytics }: Props) {
               className="btn btn-primary btn-sm"
               onClick={() => navigate('/settings')}
             >
-              {t('coach.disabled.cta')}
+              <RollText>{t('coach.disabled.cta')}</RollText>
             </button>
           </div>
         </div>
@@ -250,7 +251,7 @@ export default function CoachSection({ analytics }: Props) {
             onClick={handleWaitlist}
             disabled={waitlistBusy}
           >
-            {waitlistBusy ? t('coach.waitlist.busy') : t('coach.waitlist.cta')}
+            <RollText>{waitlistBusy ? t('coach.waitlist.busy') : t('coach.waitlist.cta')}</RollText>
           </button>
         ) : (
           <p className="coach-quota-on-list">{t('coach.waitlist.on')}</p>
@@ -321,7 +322,7 @@ export default function CoachSection({ analytics }: Props) {
               className="btn btn-secondary btn-sm"
               onClick={handleAbort}
             >
-              {t('coach.stop')}
+              <RollText>{t('coach.stop')}</RollText>
             </button>
           ) : (
             <button
@@ -329,7 +330,7 @@ export default function CoachSection({ analytics }: Props) {
               className="btn btn-primary btn-sm"
               disabled={!draft.trim()}
             >
-              {t('coach.send')}
+              <RollText>{t('coach.send')}</RollText>
             </button>
           )}
           <span
@@ -420,9 +421,9 @@ function CoachTurnView({ turn, onRetry }: { turn: Turn; onRetry?: () => void }) 
                   disabled={!canRetryNow}
                   aria-label={t('coach.retryAria')}
                 >
-                  {canRetryNow
+                  <RollText>{canRetryNow
                     ? t('coach.retry')
-                    : t('coach.retryIn', { sec: remaining ?? 0 })}
+                    : t('coach.retryIn', { sec: remaining ?? 0 })}</RollText>
                 </button>
               </div>
             )}

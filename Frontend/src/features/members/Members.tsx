@@ -4,11 +4,11 @@ import toast from 'react-hot-toast';
 import { useWedding } from '@/context/WeddingContext';
 import { useLang } from '@/context/LanguageContext';
 import { fmtDate } from '@/utils/format';
+import { avatarColor } from '@/utils/avatarColor';
 import { removeMember, adminResetMemberPin, decideJoinRequest } from '@/api';
 import type { Member } from '@/types';
+import RollText from '@/components/RollText';
 
-const AVATAR_COLORS = ['#D84381','#7C3AED','#2563EB','#059669','#D97706','#DC2626','#9333EA','#E11D48'];
-function getColor(name) { let h=0; for(let i=0;i<(name||'').length;i++) h=name.charCodeAt(i)+((h<<5)-h); return AVATAR_COLORS[Math.abs(h)%AVATAR_COLORS.length]; }
 
 // Join-code members (no email) sign in with a PIN the admin can reset.
 const usesPin = (m: Member) => m.role === 'member' && !m.email;
@@ -92,7 +92,7 @@ export default function Members() {
             className="btn btn-secondary btn-sm"
             onClick={() => { navigator.clipboard.writeText(wedding.joinCode); toast.success(t('common.codeCopied')); }}
           >
-            {t('members.copyCode')}
+            <RollText>{t('members.copyCode')}</RollText>
           </button>
         </div>
       )}
@@ -104,7 +104,7 @@ export default function Members() {
           {pendingMembers.map(m => (
             <div key={m._id} className="surface-card" style={{ marginBottom: 10, padding: 'var(--space-4)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                <div className="avatar" style={{ background: getColor(m.name), width: 40, height: 40, fontSize: '1rem' }}>
+                <div className="avatar" style={{ background: avatarColor(m.name), width: 40, height: 40, fontSize: '1rem' }}>
                   {(m.name || 'U')[0].toUpperCase()}
                 </div>
                 <div style={{ minWidth: 0 }}>
@@ -116,10 +116,10 @@ export default function Members() {
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn btn-ghost" style={{ flex: 1, color: 'var(--danger)' }} disabled={deciding === m._id} onClick={() => handleDecision(m, 'reject')}>
-                  {t('members.decline')}
+                  <RollText>{t('members.decline')}</RollText>
                 </button>
                 <button className="btn btn-primary" style={{ flex: 2 }} disabled={deciding === m._id} onClick={() => handleDecision(m, 'approve')}>
-                  {t('members.approve')}
+                  <RollText>{t('members.approve')}</RollText>
                 </button>
               </div>
             </div>
@@ -134,7 +134,7 @@ export default function Members() {
       <div className="stagger">
         {members.map(m => (
           <div key={m._id} className="expense-item">
-            <div className="avatar" style={{ background: getColor(m.name), width: 42, height: 42, fontSize: '1rem' }}>
+            <div className="avatar" style={{ background: avatarColor(m.name), width: 42, height: 42, fontSize: '1rem' }}>
               {(m.name || 'U')[0].toUpperCase()}
             </div>
             <div className="expense-info">
@@ -186,9 +186,9 @@ export default function Members() {
                 className="btn btn-secondary btn-full"
                 onClick={() => { navigator.clipboard.writeText(issued.code); toast.success(t('common.copied')); }}
               >
-                {t('settings.copy')}
+                <RollText>{t('settings.copy')}</RollText>
               </button>
-              <button className="btn btn-primary btn-full btn-lg" onClick={() => setIssued(null)}>{t('members.done')}</button>
+              <button className="btn btn-primary btn-full btn-lg" onClick={() => setIssued(null)}><RollText>{t('members.done')}</RollText></button>
             </div>
           </div>
         </div>

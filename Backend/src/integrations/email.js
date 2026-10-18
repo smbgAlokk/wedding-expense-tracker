@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const { logger } = require('../utils/logger');
+const { frontendUrl } = require('../utils/frontendUrl');
 
 // Provider-agnostic SMTP. Works with Resend, SendGrid, Mailgun, Gmail, Mailtrap,
 // etc. — they all expose SMTP host/port/user/pass. Configure via env:
@@ -21,6 +22,11 @@ function getTransporter() {
   }
   return transporter;
 }
+
+// Hosted PNG: Gmail/Outlook strip inline SVG. Teal is the accessible brand shade (white text ≥ 4.5:1).
+const BRAND = '#2F7A6C';
+const brandHeader = () =>
+  `<img src="${frontendUrl('/logo-192.png')}" width="56" height="56" alt="Wedding Expense Tracker" style="display:block;margin:0 auto;border:0">`;
 
 function escapeHtml(str = '') {
   return String(str)
@@ -46,16 +52,16 @@ async function sendPasswordResetEmail(to, resetUrl, name) {
     `If you didn't request this, you can safely ignore this email — your password won't change.`;
 
   const html = `
-  <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1f1316">
-    <div style="text-align:center;font-size:40px">💒</div>
-    <h2 style="text-align:center;color:#D84381;margin:8px 0 16px">Reset your password</h2>
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#222328">
+    ${brandHeader()}
+    <h2 style="text-align:center;color:${BRAND};margin:8px 0 16px">Reset your password</h2>
     <p>Hi ${safeName},</p>
     <p>We received a request to reset your Wedding Expense Tracker password. Tap the button below to set a new one. This link expires in <strong>1 hour</strong>.</p>
     <p style="text-align:center;margin:28px 0">
-      <a href="${resetUrl}" style="background:#D84381;color:#fff;text-decoration:none;padding:12px 28px;border-radius:999px;font-weight:600;display:inline-block">Reset password</a>
+      <a href="${resetUrl}" style="background:${BRAND};color:#fff;text-decoration:none;padding:12px 28px;border-radius:999px;font-weight:600;display:inline-block">Reset password</a>
     </p>
     <p style="font-size:13px;color:#666">If the button doesn't work, copy this link into your browser:<br>
-      <a href="${resetUrl}" style="color:#D84381;word-break:break-all">${resetUrl}</a>
+      <a href="${resetUrl}" style="color:${BRAND};word-break:break-all">${resetUrl}</a>
     </p>
     <p style="font-size:13px;color:#666">If you didn't request this, you can safely ignore this email — your password won't change.</p>
   </div>`;
@@ -95,16 +101,16 @@ async function sendVerificationEmail(to, verifyUrl, name) {
     `If you didn't sign up, you can safely ignore this email.`;
 
   const html = `
-  <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1f1316">
-    <div style="text-align:center;font-size:40px">💌</div>
-    <h2 style="text-align:center;color:#D84381;margin:8px 0 16px">Verify your email</h2>
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#222328">
+    ${brandHeader()}
+    <h2 style="text-align:center;color:${BRAND};margin:8px 0 16px">Verify your email</h2>
     <p>Hi ${safeName},</p>
     <p>Welcome to Wedding Expense Tracker! Please confirm this email address by tapping the button below. This link expires in <strong>24 hours</strong>.</p>
     <p style="text-align:center;margin:28px 0">
-      <a href="${verifyUrl}" style="background:#D84381;color:#fff;text-decoration:none;padding:12px 28px;border-radius:999px;font-weight:600;display:inline-block">Verify email</a>
+      <a href="${verifyUrl}" style="background:${BRAND};color:#fff;text-decoration:none;padding:12px 28px;border-radius:999px;font-weight:600;display:inline-block">Verify email</a>
     </p>
     <p style="font-size:13px;color:#666">If the button doesn't work, copy this link into your browser:<br>
-      <a href="${verifyUrl}" style="color:#D84381;word-break:break-all">${verifyUrl}</a>
+      <a href="${verifyUrl}" style="color:${BRAND};word-break:break-all">${verifyUrl}</a>
     </p>
     <p style="font-size:13px;color:#666">If you didn't sign up for Wedding Expense Tracker, you can safely ignore this email.</p>
   </div>`;
@@ -137,14 +143,14 @@ async function sendJoinRequestEmail(to, { adminName, requesterName, relation, we
     `Only approve people you know. If you don't recognise them, decline the request — your code may have been shared further than intended.`;
 
   const html = `
-  <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1f1316">
-    <div style="text-align:center;font-size:40px">🙋</div>
-    <h2 style="text-align:center;color:#D84381;margin:8px 0 16px">Someone wants to join</h2>
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#222328">
+    ${brandHeader()}
+    <h2 style="text-align:center;color:${BRAND};margin:8px 0 16px">Someone wants to join</h2>
     <p>Hi ${escapeHtml(adminName || 'there')},</p>
     <p><strong>“${escapeHtml(requesterName)}”</strong>${relation ? ` (${escapeHtml(relation)})` : ''} used your wedding code and is asking to join <strong>${escapeHtml(weddingName)}</strong>${escapeHtml(others)}.</p>
     <p>They can't see anything until you approve them.</p>
     <p style="text-align:center;margin:28px 0">
-      <a href="${reviewUrl}" style="background:#D84381;color:#fff;text-decoration:none;padding:12px 28px;border-radius:999px;font-weight:600;display:inline-block">Review request</a>
+      <a href="${reviewUrl}" style="background:${BRAND};color:#fff;text-decoration:none;padding:12px 28px;border-radius:999px;font-weight:600;display:inline-block">Review request</a>
     </p>
     <p style="font-size:13px;color:#666">Only approve people you know. If you don't recognise them, decline — your code may have been shared further than intended.</p>
   </div>`;

@@ -5,11 +5,13 @@ import { useWedding } from '@/context/WeddingContext';
 import { useLang } from '@/context/LanguageContext';
 import { createWedding, createPersonalWorkspace, lookupJoin, joinWedding, resetPinWithCode, loginUser, googleLogin, selectWedding, forgotPassword } from '@/api';
 import PinField from '@/components/PinField';
+import BrandLogo from '@/components/BrandLogo';
 import { pinErrorMessage, pinFormError } from '@/utils/pinErrors';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageToggle from '@/components/LanguageToggle';
 import TurnstileWidget, { isTurnstileEnabled } from './TurnstileWidget';
 import type { Member, Wedding, AuthResult, WeddingOption } from '@/types';
+import RollText from '@/components/RollText';
 
 // Which auth surface is showing (null = the landing hero, which now embeds the
 // multi-vertical type picker directly so users see all options upfront —
@@ -224,7 +226,7 @@ export default function LandingPage() {
       {!mode && <HeroSection onSelect={setMode} onGoogleSuccess={handleLoginSuccess} />}
 
       {mode && (
-        <div className="auth-panel auth-panel-form animate-scale">
+        <div className={`auth-panel auth-panel-form animate-scale${mode === 'create' || mode === 'create-personal' ? ' auth-panel-wide' : ''}`}>
           {mode === 'create' && <CreateForm onBack={() => setMode(null)} login={login} navigate={navigate} />}
           {mode === 'create-personal' && <CreatePersonalForm onBack={() => setMode(null)} login={login} navigate={navigate} />}
           {mode === 'join' && <JoinForm onBack={() => setMode(null)} login={login} navigate={navigate} onAuthSuccess={handleLoginSuccess} onSwitchToLogin={() => setMode('login')} />}
@@ -255,15 +257,10 @@ function HeroSection({ onSelect, onGoogleSuccess }: { onSelect: (mode: Mode) => 
     <div className="auth-hero animate-in">
       {/* LEFT — brand / showcase panel */}
       <div className="auth-brand">
-        {/* Neutral money-bag emblem with vertical-themed sparks (💒 wedding,
-            ✈️ trip, ✨ generic) signalling the multi-vertical nature. */}
         <div className="landing-emblem">
           <span className="landing-emblem-glow" aria-hidden="true" />
           <span className="landing-emblem-ring" aria-hidden="true" />
-          <span className="landing-emblem-icon" role="img" aria-label="Expense tracker">💰</span>
-          <span className="landing-spark landing-spark-1" aria-hidden="true">💒</span>
-          <span className="landing-spark landing-spark-2" aria-hidden="true">✈️</span>
-          <span className="landing-spark landing-spark-3" aria-hidden="true">✨</span>
+          <BrandLogo className="landing-emblem-icon" size="64%" />
         </div>
 
         <div className="status-pill">
@@ -350,7 +347,7 @@ function HeroSection({ onSelect, onGoogleSuccess }: { onSelect: (mode: Mode) => 
         <GoogleAuthButton text="continue_with" onCredential={handleHeroGoogle} />
 
         {/* Secondary actions — small text links for the two non-create flows. */}
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap', fontSize: '0.83rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, marginTop: 16, fontSize: '0.83rem' }}>
           <button
             type="button"
             onClick={() => onSelect('login')}
@@ -359,7 +356,6 @@ function HeroSection({ onSelect, onGoogleSuccess }: { onSelect: (mode: Mode) => 
           >
             {t('landing.signInLink')}
           </button>
-          <span aria-hidden="true" style={{ color: 'var(--text-muted)' }}>·</span>
           <button
             type="button"
             onClick={() => onSelect('join')}
@@ -459,7 +455,7 @@ function CreateForm({ onBack, login, navigate }: { onBack: () => void; login: Lo
           <label className="form-label">{t('create.weddingName')}</label>
           <input className="form-input" placeholder={t('create.weddingNamePlaceholder')} value={form.weddingName} onChange={e => set('weddingName', e.target.value)} id="input-wedding-name" />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 'var(--space-4)' }}>
           <div className="form-group">
             <label className="form-label">{t('create.partner1')}</label>
             <input className="form-input" placeholder={t('create.partnerPlaceholder')} value={form.partner1} onChange={e => set('partner1', e.target.value)} id="input-partner1" />
@@ -469,25 +465,29 @@ function CreateForm({ onBack, login, navigate }: { onBack: () => void; login: Lo
             <input className="form-input" placeholder={t('create.partnerPlaceholder')} value={form.partner2} onChange={e => set('partner2', e.target.value)} id="input-partner2" />
           </div>
         </div>
-        <div className="form-group">
-          <label className="form-label">{t('create.weddingDate')}</label>
-          <input className="form-input" type="date" value={form.weddingDate} onChange={e => set('weddingDate', e.target.value)} id="input-wedding-date" />
-        </div>
-        <div className="form-group">
-          <label className="form-label">{t('create.totalBudget')}</label>
-          <input className="form-input" type="number" inputMode="decimal" placeholder={t('create.budgetPlaceholder')} value={form.totalBudget} onChange={e => set('totalBudget', e.target.value)} id="input-budget" />
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">{t('create.weddingDate')}</label>
+            <input className="form-input" type="date" value={form.weddingDate} onChange={e => set('weddingDate', e.target.value)} id="input-wedding-date" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">{t('create.totalBudget')}</label>
+            <input className="form-input" type="number" inputMode="decimal" placeholder={t('create.budgetPlaceholder')} value={form.totalBudget} onChange={e => set('totalBudget', e.target.value)} id="input-budget" />
+          </div>
         </div>
 
         <hr className="divider" />
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem', fontWeight: 600, marginBottom: 14 }}>{t('create.adminSection')}</p>
 
-        <div className="form-group">
-          <label className="form-label">{t('create.yourName')}</label>
-          <input className="form-input" placeholder={t('create.yourNamePlaceholder')} value={form.adminName} onChange={e => set('adminName', e.target.value)} id="input-admin-name" />
-        </div>
-        <div className="form-group">
-          <label className="form-label">{t('create.yourRelation')}</label>
-          <input className="form-input" placeholder={t('create.yourRelationPlaceholder')} value={form.adminRelation} onChange={e => set('adminRelation', e.target.value)} id="input-admin-relation" />
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">{t('create.yourName')}</label>
+            <input className="form-input" placeholder={t('create.yourNamePlaceholder')} value={form.adminName} onChange={e => set('adminName', e.target.value)} id="input-admin-name" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">{t('create.yourRelation')}</label>
+            <input className="form-input" placeholder={t('create.yourRelationPlaceholder')} value={form.adminRelation} onChange={e => set('adminRelation', e.target.value)} id="input-admin-relation" />
+          </div>
         </div>
 
         <hr className="divider" />
@@ -498,29 +498,31 @@ function CreateForm({ onBack, login, navigate }: { onBack: () => void; login: Lo
           <label className="form-label">{t('create.email')}</label>
           <input className="form-input" type="email" autoComplete="email" placeholder={t('create.emailPlaceholder')} value={form.email} onChange={e => set('email', e.target.value)} id="input-email" />
         </div>
-        <div className="form-group">
-          <label className="form-label">{t('create.password')}</label>
-          <div style={{ position: 'relative' }}>
-            <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('create.passwordPlaceholder')} value={form.password} onChange={e => set('password', e.target.value)} id="input-password" style={{ paddingRight: 50 }} />
-            <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label="Toggle password visibility" style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem', padding: 4 }}>
-              {showPassword ? '🙈' : '👁️'}
-            </button>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">{t('create.password')}</label>
+            <div style={{ position: 'relative' }}>
+              <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('create.passwordPlaceholder')} value={form.password} onChange={e => set('password', e.target.value)} id="input-password" style={{ paddingRight: 50 }} />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label="Toggle password visibility" style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem', padding: 4 }}>
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
           </div>
-        </div>
-        <div className="form-group">
-          <label className="form-label">{t('create.confirmPassword')}</label>
-          <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('create.confirmPasswordPlaceholder')} value={form.confirmPassword} onChange={e => set('confirmPassword', e.target.value)} id="input-confirm-password" />
-          {form.password && form.confirmPassword && form.password !== form.confirmPassword && (
-            <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: 6 }}>{t('create.passwordsNoMatch')}</p>
-          )}
-          {form.password && form.confirmPassword && form.password === form.confirmPassword && (
-            <p style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 6 }}>{t('create.passwordsMatch')}</p>
-          )}
+          <div className="form-group">
+            <label className="form-label">{t('create.confirmPassword')}</label>
+            <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('create.confirmPasswordPlaceholder')} value={form.confirmPassword} onChange={e => set('confirmPassword', e.target.value)} id="input-confirm-password" />
+            {form.password && form.confirmPassword && form.password !== form.confirmPassword && (
+              <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: 6 }}>{t('create.passwordsNoMatch')}</p>
+            )}
+            {form.password && form.confirmPassword && form.password === form.confirmPassword && (
+              <p style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 6 }}>{t('create.passwordsMatch')}</p>
+            )}
+          </div>
         </div>
 
         <TurnstileWidget onToken={setCaptcha} />
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-create" style={{ marginTop: 8 }}>
-          {loading ? t('create.creating') : t('create.submitBtn')}
+          <RollText>{loading ? t('create.creating') : t('create.submitBtn')}</RollText>
         </button>
       </form>
 
@@ -587,7 +589,7 @@ function LoginForm({ onBack, onSuccess, onForgot }: { onBack: () => void; onSucc
         </div>
         <TurnstileWidget onToken={setCaptcha} />
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-login" style={{ marginTop: 8 }}>
-          {loading ? t('login.loggingIn') : t('login.submitBtn')}
+          <RollText>{loading ? t('login.loggingIn') : t('login.submitBtn')}</RollText>
         </button>
       </form>
 
@@ -632,7 +634,7 @@ function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
         <p className="text-muted" style={{ fontSize: '0.92rem', marginBottom: 24, lineHeight: 1.6 }}>
           {t('forgot.sentBody')}
         </p>
-        <button className="btn btn-secondary btn-full btn-lg" onClick={onBack}>{t('forgot.backToLogin')}</button>
+        <button className="btn btn-secondary btn-full btn-lg" onClick={onBack}><RollText>{t('forgot.backToLogin')}</RollText></button>
       </div>
     );
   }
@@ -651,7 +653,7 @@ function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
         </div>
         <TurnstileWidget onToken={setCaptcha} />
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-forgot" style={{ marginTop: 8 }}>
-          {loading ? t('forgot.sending') : t('forgot.submitBtn')}
+          <RollText>{loading ? t('forgot.sending') : t('forgot.submitBtn')}</RollText>
         </button>
       </form>
     </div>
@@ -875,7 +877,7 @@ function JoinForm({ onBack, login, navigate, onAuthSuccess, onSwitchToLogin }: {
         )}
 
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-join" style={{ marginTop: 8 }}>
-          {loading ? t('join.checking') : submitLabel}
+          <RollText>{loading ? t('join.checking') : submitLabel}</RollText>
         </button>
       </form>
 
@@ -978,15 +980,17 @@ function CreatePersonalForm({ onBack, login, navigate }: { onBack: () => void; l
       <p className="text-muted" style={{ fontSize: '0.92rem', marginBottom: 20 }}>{t('createPersonal.subtitle')}</p>
 
       <form onSubmit={handleSubmit}>
-        <div className="form-group">
-          <label className="form-label">{t('createPersonal.workspaceName')}</label>
-          <input className="form-input" placeholder={t('createPersonal.workspaceNamePlaceholder')} value={form.name} onChange={e => set('name', e.target.value)} id="input-personal-name" />
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 4 }}>{t('createPersonal.workspaceNameHint')}</p>
-        </div>
-        <div className="form-group">
-          <label className="form-label">{t('createPersonal.monthlyBudget')}</label>
-          <input className="form-input" type="number" inputMode="decimal" placeholder={t('createPersonal.monthlyBudgetPlaceholder')} value={form.monthlyBudget} onChange={e => set('monthlyBudget', e.target.value)} id="input-personal-budget" />
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 4 }}>{t('createPersonal.monthlyBudgetHint')}</p>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">{t('createPersonal.workspaceName')}</label>
+            <input className="form-input" placeholder={t('createPersonal.workspaceNamePlaceholder')} value={form.name} onChange={e => set('name', e.target.value)} id="input-personal-name" />
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 4 }}>{t('createPersonal.workspaceNameHint')}</p>
+          </div>
+          <div className="form-group">
+            <label className="form-label">{t('createPersonal.monthlyBudget')}</label>
+            <input className="form-input" type="number" inputMode="decimal" placeholder={t('createPersonal.monthlyBudgetPlaceholder')} value={form.monthlyBudget} onChange={e => set('monthlyBudget', e.target.value)} id="input-personal-budget" />
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 4 }}>{t('createPersonal.monthlyBudgetHint')}</p>
+          </div>
         </div>
 
         <hr className="divider" />
@@ -1003,29 +1007,31 @@ function CreatePersonalForm({ onBack, login, navigate }: { onBack: () => void; l
           <label className="form-label">{t('create.email')}</label>
           <input className="form-input" type="email" autoComplete="email" placeholder={t('create.emailPlaceholder')} value={form.email} onChange={e => set('email', e.target.value)} id="input-personal-email" />
         </div>
-        <div className="form-group">
-          <label className="form-label">{t('create.password')}</label>
-          <div style={{ position: 'relative' }}>
-            <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('create.passwordPlaceholder')} value={form.password} onChange={e => set('password', e.target.value)} id="input-personal-password" style={{ paddingRight: 50 }} />
-            <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label="Toggle password visibility" style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem', padding: 4 }}>
-              {showPassword ? '🙈' : '👁️'}
-            </button>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">{t('create.password')}</label>
+            <div style={{ position: 'relative' }}>
+              <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('create.passwordPlaceholder')} value={form.password} onChange={e => set('password', e.target.value)} id="input-personal-password" style={{ paddingRight: 50 }} />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label="Toggle password visibility" style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1rem', padding: 4 }}>
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
           </div>
-        </div>
-        <div className="form-group">
-          <label className="form-label">{t('create.confirmPassword')}</label>
-          <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('create.confirmPasswordPlaceholder')} value={form.confirmPassword} onChange={e => set('confirmPassword', e.target.value)} id="input-personal-confirm-password" />
-          {form.password && form.confirmPassword && form.password !== form.confirmPassword && (
-            <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: 6 }}>{t('create.passwordsNoMatch')}</p>
-          )}
-          {form.password && form.confirmPassword && form.password === form.confirmPassword && (
-            <p style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 6 }}>{t('create.passwordsMatch')}</p>
-          )}
+          <div className="form-group">
+            <label className="form-label">{t('create.confirmPassword')}</label>
+            <input className="form-input" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('create.confirmPasswordPlaceholder')} value={form.confirmPassword} onChange={e => set('confirmPassword', e.target.value)} id="input-personal-confirm-password" />
+            {form.password && form.confirmPassword && form.password !== form.confirmPassword && (
+              <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: 6 }}>{t('create.passwordsNoMatch')}</p>
+            )}
+            {form.password && form.confirmPassword && form.password === form.confirmPassword && (
+              <p style={{ color: 'var(--success)', fontSize: '0.8rem', marginTop: 6 }}>{t('create.passwordsMatch')}</p>
+            )}
+          </div>
         </div>
 
         <TurnstileWidget onToken={setCaptcha} />
         <button className="btn btn-primary btn-full btn-lg" type="submit" disabled={loading} id="btn-submit-personal-create" style={{ marginTop: 8 }}>
-          {loading ? t('createPersonal.creating') : t('createPersonal.submitBtn')}
+          <RollText>{loading ? t('createPersonal.creating') : t('createPersonal.submitBtn')}</RollText>
         </button>
       </form>
 
