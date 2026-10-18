@@ -1,17 +1,17 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
-import { getCurrentWedding, getExpenseSummary, getWeddingMembers, logoutUser } from '../api';
+import { getCurrentWedding, getExpenseSummary, getWeddingMembers, getMe, logoutUser } from '@/api';
 import type {
   Wedding,
   Member,
   ExpenseSummary,
   WorkspaceType,
   WorkspaceFeatures,
-} from '../types';
-import { DEFAULT_WORKSPACE_TYPE } from '../types';
-import { getFeaturesByType } from '../constants/defaultCategories';
+} from '@/types';
+import { DEFAULT_WORKSPACE_TYPE } from '@/types';
+import { getFeaturesByType } from '@/constants/defaultCategories';
 import { useLang } from './LanguageContext';
 import { WeddingContext, type WeddingContextType } from './WeddingContext';
-import { cacheInvalidate } from '../utils/dataCache';
+import { cacheInvalidate, fetchOnce } from '@/utils/dataCache';
 
 const VISIBILITY_REFRESH_THROTTLE_MS = 15_000;
 
@@ -34,6 +34,7 @@ export function WeddingProvider({ children }: WeddingProviderProps) {
 
   const [summary, setSummary] = useState<ExpenseSummary | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [pendingMembers, setPendingMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
   // C-2 (§14.F): the JWT is now an HttpOnly cookie, invisible to JS. We can no
@@ -42,6 +43,9 @@ export function WeddingProvider({ children }: WeddingProviderProps) {
   // the 401 interceptor clears the cache (+ bounces to landing) if it's dead.
   const isAuthenticated = !!member;
   const isAdmin = member?.role === 'admin';
+  // Awaiting admin approval: the server blocks every data route, so don't call them.
+  const isPending = member?.status === 'pending';
+  const canLoad = isAuthenticated && !isPending;
 
   const login = useCallback((memberData: Member, weddingData: Wedding) => {
     // member + wedding are non-sensitive UX cache only — no token here.
@@ -62,6 +66,7 @@ export function WeddingProvider({ children }: WeddingProviderProps) {
     setWedding(null);
     setSummary(null);
     setMembers([]);
+    setPendingMembers([]);
     // Wipe every cached view on logout — on a shared device, the next
     // user must never see leftover analytics / AI quota state from the
     // previous session.
@@ -69,7 +74,7 @@ export function WeddingProvider({ children }: WeddingProviderProps) {
   }, []);
 
   const refreshWedding = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!canLoad) return;
     try {
       const res = await getCurrentWedding();
       setWedding(res.data.data.wedding);
@@ -77,10 +82,22 @@ export function WeddingProvider({ children }: WeddingProviderProps) {
     } catch (err) {
       console.error('Failed to refresh wedding:', err);
     }
+  }, [canLoad]);
+
+  // Member only: /auth/me's workspace lacks the populated fields /weddings/current returns.
+  const refreshMember = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const fresh = await fetchOnce('auth:me', () => getMe().then((res) => res.data.data.member as Member));
+      setMember(fresh);
+      localStorage.setItem('wedding_member', JSON.stringify(fresh));
+    } catch (err) {
+      console.error('Failed to refresh member:', err);
+    }
   }, [isAuthenticated]);
 
   const refreshSummary = useCallback(async (params?: { from?: string; to?: string }) => {
-    if (!isAuthenticated) return;
+    if (!canLoad) return;
     try {
       setLoading(true);
       const res = await getExpenseSummary(params);
@@ -90,33 +107,35 @@ export function WeddingProvider({ children }: WeddingProviderProps) {
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [canLoad]);
 
   const refreshMembers = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!canLoad) return;
     try {
       const res = await getWeddingMembers();
       setMembers(res.data.data.members);
+      setPendingMembers(res.data.data.pending ?? []);
     } catch (err) {
       console.error('Failed to refresh members:', err);
     }
-  }, [isAuthenticated]);
+  }, [canLoad]);
 
   // Bootstrap data on auth. Deferred via setTimeout so the refreshers' setState calls
   // run outside the effect's synchronous body (avoids cascading-render on mount).
+  // Re-runs when approval lands (canLoad flips true), loading the full workspace.
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!canLoad) return;
     const id = setTimeout(() => {
       refreshWedding();
       refreshSummary();
       refreshMembers();
     }, 0);
     return () => clearTimeout(id);
-  }, [isAuthenticated, refreshWedding, refreshSummary, refreshMembers]);
+  }, [canLoad, refreshWedding, refreshSummary, refreshMembers]);
 
   const lastFocusRefreshRef = useRef<number>(0);
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!canLoad) return;
 
     const handleVisibility = () => {
       if (document.visibilityState !== 'visible') return;
@@ -125,11 +144,12 @@ export function WeddingProvider({ children }: WeddingProviderProps) {
       lastFocusRefreshRef.current = now;
       refreshWedding();
       refreshSummary();
+      if (isAdmin) refreshMembers(); // surfaces new join requests
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [isAuthenticated, refreshWedding, refreshSummary]);
+  }, [canLoad, isAdmin, refreshWedding, refreshSummary, refreshMembers]);
 
   // Multi-vertical derivation (Phase 0a). Workspace type comes from the
   // wedding document; older payloads created before Phase 0a may lack it, in
@@ -167,15 +187,18 @@ export function WeddingProvider({ children }: WeddingProviderProps) {
     wedding,
     summary,
     members,
+    pendingMembers,
     loading,
     isAuthenticated,
     isAdmin,
+    isPending,
     workspaceType,
     features,
     tw,
     login,
     logout,
     refreshWedding,
+    refreshMember,
     refreshSummary,
     refreshMembers
   };

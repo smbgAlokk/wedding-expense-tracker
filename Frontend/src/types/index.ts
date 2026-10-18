@@ -81,6 +81,14 @@ export interface Member {
   relation?: string;
   joinedAt?: string;
   createdAt?: string;
+  // ISO date once verified, null while pending. Absent only in member caches
+  // written before the field existed — treat as "unknown", not "unverified".
+  emailVerifiedAt?: string | null;
+  // Join-code members only: when their 6-digit PIN was set (null = none yet).
+  pinSetAt?: string | null;
+  // Join approval. Absent on members predating the feature → approved.
+  status?: 'approved' | 'pending' | 'rejected';
+  updatedAt?: string;
   // L3 — AI Coach opt-in + waitlist flags. Both default false on the
   // server; the frontend reads them via /api/ai/coach/status so most
   // consumers don't need to touch the Member object directly.
@@ -130,6 +138,8 @@ export interface Wedding {
   // set, the Dashboard surfaces a "Until next payday" runway tile. 1–31 or
   // null. Clamped client-side to the last day of months that are shorter.
   payDay?: number | null;
+  // New code-joiners wait for admin approval (server default true).
+  joinApproval?: boolean;
   // L0 — Need / Want / Saving target allocation. Always present in fresh
   // workspaces (schema default); may be undefined on legacy pre-L0 documents
   // until the next admin save persists the default. Consumers should fall

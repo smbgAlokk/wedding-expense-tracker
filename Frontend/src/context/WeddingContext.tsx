@@ -5,16 +5,20 @@ import type {
   ExpenseSummary,
   WorkspaceType,
   WorkspaceFeatures,
-} from '../types';
+} from '@/types';
 
 export interface WeddingContextType {
   member: Member | null;
   wedding: Wedding | null;
   summary: ExpenseSummary | null;
   members: Member[];
+  // Admin only: people who used the join code and await approval.
+  pendingMembers: Member[];
   loading: boolean;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  // Signed-in member whose join request the admin hasn't approved yet.
+  isPending: boolean;
   // Multi-vertical (Phase 0a). `workspaceType` is the discriminator selecting
   // which vertical's defaults / features apply. `features` is the derived flag
   // set the UI consults to gate sections (members page, join code, month
@@ -33,6 +37,8 @@ export interface WeddingContextType {
   login: (memberData: Member, weddingData: Wedding) => void;
   logout: () => void;
   refreshWedding: () => Promise<void>;
+  // Re-reads the signed-in member (e.g. email verification status) from /auth/me.
+  refreshMember: () => Promise<void>;
   // Optional `params` carries an ISO `from`/`to` date range so callers can scope
   // the summary to a calendar month (Personal vertical). When omitted, the
   // backend returns lifetime totals — the legacy Wedding/Trip behaviour.

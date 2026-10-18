@@ -34,7 +34,7 @@ async function main() {
   await mongoose.connect(MONGODB_URI);
   console.log('[backfill] Connected.');
 
-  const Member = require('../models/Member');
+  const Member = require('../src/models/Member');
 
   // Match: has email, has password (i.e. local-auth user), not yet verified.
   // We select +password since it's normally hidden; the query needs it to

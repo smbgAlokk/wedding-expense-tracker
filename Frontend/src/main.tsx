@@ -2,12 +2,12 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import { WeddingProvider } from './context/WeddingProvider'
-import { LanguageProvider } from './context/LanguageProvider'
-import { AICoachProvider } from './context/AICoachProvider'
-import App from './App'
-import './index.css'
-import { initSentry } from './sentry'
+import { WeddingProvider } from '@/context/WeddingProvider'
+import { LanguageProvider } from '@/context/LanguageProvider'
+import { AICoachProvider } from '@/features/coach/AICoachProvider'
+import App from '@/app/App'
+import '@/styles/index.css'
+import { initSentry } from '@/app/sentry'
 
 // Error monitoring — no-op unless VITE_SENTRY_DSN is set (§14.G).
 initSentry()
@@ -22,7 +22,7 @@ try {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <BrowserRouter>
       <LanguageProvider>
         <WeddingProvider>
           <AICoachProvider>
