@@ -61,6 +61,13 @@ const refreshTokenSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  // Memberships the sign-in credential proved (password matched / Google
+  // verified) — the only accounts this session may switch between. Carried
+  // across rotation and switches; never sent to the client.
+  linked: {
+    type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }],
+    default: undefined,
+  },
   userAgent: { type: String, default: '' },
   ip: { type: String, default: '' },
 }, {

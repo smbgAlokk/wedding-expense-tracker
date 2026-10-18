@@ -224,7 +224,7 @@ const generateToken = generateAccessToken;
  * cookie, never stored) plus its hash + family. Pass an existing `family` when
  * rotating so descendants stay linked for theft-detection revocation.
  */
-async function createRefreshToken(memberId, req, family) {
+async function createRefreshToken(memberId, req, family, linked) {
   const rawToken = crypto.randomBytes(40).toString('hex');
   const tokenHash = hashToken(rawToken);
   const fam = family || crypto.randomBytes(16).toString('hex');
@@ -232,6 +232,7 @@ async function createRefreshToken(memberId, req, family) {
     memberId,
     tokenHash,
     family: fam,
+    linked: [...new Set([String(memberId), ...(linked || []).map(String)])],
     expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
     userAgent: (req && req.headers && req.headers['user-agent']) || '',
     ip: (req && req.ip) || '',
@@ -274,7 +275,7 @@ async function rotateRefreshToken(rawToken, req) {
     throw err;
   }
 
-  const next = await createRefreshToken(existing.memberId, req, existing.family);
+  const next = await createRefreshToken(existing.memberId, req, existing.family, existing.linked);
   existing.revokedAt = now;
   existing.replacedByHash = next.tokenHash;
   await existing.save();
@@ -341,11 +342,26 @@ function clearSessionCookies(res) {
  * sets all three cookies. Replaces the old "return token in JSON body" model
  * (which exposed the token to any XSS — the whole point of C-2).
  */
-async function issueSession(res, req, member) {
+async function issueSession(res, req, member, linked) {
   const accessToken = generateAccessToken(member._id);
-  const { rawToken: refreshToken } = await createRefreshToken(member._id, req);
+  const { rawToken: refreshToken } = await createRefreshToken(member._id, req, undefined, linked);
   const csrf = crypto.randomBytes(24).toString('hex');
   setSessionCookies(res, { accessToken, refreshToken, csrf });
+}
+
+/**
+ * Memberships this session may switch between: the `linked` set stored on the
+ * live refresh token. Anything unexpected (no cookie, revoked/expired token,
+ * token of another member, pre-switching sessions) narrows to just the caller.
+ */
+async function sessionLinks(req) {
+  const raw = req.cookies && req.cookies[REFRESH_COOKIE];
+  const self = [String(req.member._id)];
+  if (!raw || typeof raw !== 'string') return self;
+  const row = await RefreshToken.findOne({ tokenHash: hashToken(raw), revokedAt: null, expiresAt: { $gt: new Date() } })
+    .select('memberId linked').lean();
+  if (!row || String(row.memberId) !== self[0] || !row.linked) return self;
+  return row.linked.map(String);
 }
 
 // ─── Selector tokens (Security audit C-1, 2026-05-28) ──────────────────────
@@ -408,6 +424,7 @@ module.exports = {
   generateSelectorToken,
   verifySelectorToken,
   issueSession,
+  sessionLinks,
   rotateRefreshToken,
   revokeRefreshToken,
   revokeFamily,

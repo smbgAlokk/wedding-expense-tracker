@@ -6,6 +6,7 @@ import { getMe } from '@/api';
 import { pinErrorMessage } from '@/utils/pinErrors';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageToggle from '@/components/LanguageToggle';
+import AccountSwitcher from '@/features/settings/AccountSwitcher';
 import type { Member } from '@/types';
 import RollText from '@/components/RollText';
 
@@ -72,6 +73,9 @@ export default function PendingApproval() {
             <RollText>{checking ? t('join.checking') : t('pending.checkNow')}</RollText>
           </button>
           <button className="btn btn-ghost btn-full" onClick={logout} id="btn-pending-signout"><RollText>{t('settings.signOut')}</RollText></button>
+        </div>
+        <div style={{ marginTop: 24, textAlign: 'left' }}>
+          <AccountSwitcher />
         </div>
       </div>
     </div>

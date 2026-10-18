@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { useLang } from '@/context/LanguageContext';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
+import Loader from '@/components/Loader';
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 5;
@@ -317,8 +318,8 @@ export default function ReceiptViewer({ url, filename = 'receipt', onClose }) {
         onClick={(e) => e.stopPropagation()}
       >
         {!imgLoaded && !imgError && (
-          <div className="receipt-viewer-loading" aria-hidden="true">
-            <div className="receipt-viewer-spinner" />
+          <div className="receipt-viewer-loading">
+            <Loader size="sm" />
           </div>
         )}
         {imgError && (

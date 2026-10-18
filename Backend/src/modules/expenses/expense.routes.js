@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const multer = require('multer');
 const Expense = require('../../models/Expense');
 const Wedding = require('../../models/Wedding');
 const Member = require('../../models/Member');
 const { asyncHandler } = require('../../middleware/errorHandler');
 const { protect, adminOnly } = require('../../middleware/auth');
+const { imageUpload } = require('../../middleware/imageUpload');
 const { escapeRegexCapped } = require('../../utils/regex');
 const {
   isConfigured: isCloudinaryConfigured,
@@ -14,27 +14,7 @@ const {
   deleteFromCloudinary,
 } = require('../../integrations/cloudinary');
 
-// ─── Multer config — in-memory buffer, images only, 5 MB max ────────────────
-const ALLOWED_MIMES = [
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/heic',
-  'image/heif',
-];
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_FILE_SIZE },
-  fileFilter: (_req, file, cb) => {
-    if (ALLOWED_MIMES.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed (JPG, PNG, WebP, HEIC)'), false);
-    }
-  },
-});
+const receiptUpload = imageUpload('receipt', { label: 'Receipt image', maxMB: 5 });
 
 // Parse the optional `from` + `to` ISO timestamps used by Personal-vertical
 // month scoping. Client sends the exact range it wants (computed from the
@@ -54,17 +34,6 @@ function parseDateRange(fromStr, toStr) {
   return Object.keys(filter).length ? filter : null;
 }
 
-// The browser-declared MIME type is attacker-controlled; check the file's own
-// signature (JPEG, PNG, WebP, HEIC/HEIF) before it goes anywhere (audit M-11).
-const HEIF_BRANDS = new Set(['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1']);
-function isImageBuffer(b) {
-  if (!b || b.length < 12) return false;
-  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return true;
-  if (b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return true;
-  if (b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP') return true;
-  return b.toString('ascii', 4, 8) === 'ftyp' && HEIF_BRANDS.has(b.toString('ascii', 8, 12));
-}
-
 // Strict: rejects '10abc', NaN, Infinity, ≤ 0 and absurd values that would poison totals.
 const MAX_AMOUNT = 1e10;
 const parseAmount = (v) => {
@@ -72,34 +41,6 @@ const parseAmount = (v) => {
   return Number.isFinite(n) && n > 0 && n <= MAX_AMOUNT ? n : null;
 };
 const invalidAmount = (res) => res.status(400).json({ success: false, message: 'Please enter a valid amount.' });
-
-// Wrap multer so we can return a clean JSON error instead of crashing
-const receiptUpload = (req, res, next) => {
-  upload.single('receipt')(req, res, (err) => {
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({
-          success: false,
-          message: 'Receipt image must be under 5 MB',
-        });
-      }
-      return res.status(400).json({
-        success: false,
-        message: `Upload error: ${err.message}`,
-      });
-    }
-    if (err) {
-      return res.status(400).json({
-        success: false,
-        message: err.message || 'Invalid file',
-      });
-    }
-    if (req.file && !isImageBuffer(req.file.buffer)) {
-      return res.status(400).json({ success: false, message: 'Only image files are allowed (JPG, PNG, WebP, HEIC)' });
-    }
-    next();
-  });
-};
 
 /**
  * POST /api/expenses
@@ -146,8 +87,7 @@ router.post('/', protect, receiptUpload, asyncHandler(async (req, res) => {
       receiptWarning = 'Receipt storage is not configured. Expense saved without receipt.';
     } else {
       try {
-        const folder = `wedding-receipts/${req.weddingId}`;
-        const result = await uploadToCloudinary(req.file.buffer, folder);
+        const result = await uploadToCloudinary(req.file.buffer, { folder: `wedding-receipts/${req.weddingId}` });
         receiptUrl = result.url;
         receiptPublicId = result.publicId;
       } catch (uploadErr) {
@@ -380,7 +320,8 @@ router.get('/summary', protect, asyncHandler(async (req, res) => {
           total: 1,
           count: 1,
           name: '$member.name',
-          relation: '$member.relation'
+          relation: '$member.relation',
+          avatar: '$member.avatar'
         }
       }
     ]),

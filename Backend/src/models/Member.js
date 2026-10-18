@@ -16,6 +16,13 @@ const memberSchema = new mongoose.Schema({
     trim: true,
     maxlength: [50, 'Name cannot exceed 50 characters']
   },
+  // services/memberName.nameKey(name) — set on join + rename so the unique index
+  // below rejects two equivalent names racing into one workspace. Legacy docs
+  // lack it (excluded from the index); nameTaken() still compares them.
+  nameKey: {
+    type: String,
+    select: false
+  },
   email: {
     type: String,
     trim: true,
@@ -201,6 +208,11 @@ memberSchema.index({ weddingId: 1, email: 1 }, {
   partialFilterExpression: { email: { $type: 'string', $ne: '' } }
 });
 
+memberSchema.index({ weddingId: 1, nameKey: 1 }, {
+  unique: true,
+  partialFilterExpression: { nameKey: { $type: 'string' } }
+});
+
 // Point lookup for POST /auth/verify-email; sparse because most docs have no token.
 memberSchema.index({ emailVerificationToken: 1 }, { sparse: true });
 
@@ -244,6 +256,7 @@ memberSchema.methods.toJSON = function() {
   delete obj.pinHash;
   delete obj.pinResetCodeHash;
   delete obj.pinResetExpires;
+  delete obj.nameKey;
   return obj;
 };
 

@@ -6,6 +6,7 @@ import { useAICoach } from './AICoachContext';
 import { streamCoachReply } from '@/api';
 import { renderMarkdownLite } from './markdownLite';
 import RollText from '@/components/RollText';
+import Loader from '@/components/Loader';
 
 /**
  * L3 — AI Coach on the /insights page.
@@ -189,12 +190,10 @@ export default function CoachSection({ analytics }: Props) {
     }
   };
 
-  // Loading skeleton — keep visual mass so layout doesn't reflow when ready.
   if (statusLoading) {
     return (
       <section className="coach-card coach-card-loading" aria-busy="true">
-        <div className="skeleton" style={{ height: 24, width: '40%', marginBottom: 12 }} />
-        <div className="skeleton" style={{ height: 16, width: '70%' }} />
+        <Loader size="sm" />
       </section>
     );
   }
@@ -398,8 +397,8 @@ function CoachTurnView({ turn, onRetry }: { turn: Turn; onRetry?: () => void }) 
       <div className="coach-turn-a">
         <span className="coach-turn-a-label">{t('coach.title')}</span>
         {turn.phase === 'streaming' && !turn.answer ? (
-          <div className="coach-typing" aria-label={t('coach.typing')}>
-            <span /><span /><span />
+          <div className="coach-typing">
+            <Loader size="sm" label={t('coach.typing')} />
           </div>
         ) : (
           <div className="coach-markdown">{rendered}</div>

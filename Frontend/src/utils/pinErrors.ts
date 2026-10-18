@@ -1,7 +1,10 @@
 type T = (key: string, vars?: Record<string, string | number>) => string;
 
-// Server `code` → localized message for the join / PIN flows.
+// Server `code` → localized message for the join / PIN / profile-name flows.
 const CODE_KEYS: Record<string, string> = {
+  INVALID_NAME: 'profile.errName',
+  NAME_TAKEN: 'profile.errNameTaken',
+  PIN_REQUIRED: 'profile.errPinRequired',
   PIN_FORMAT: 'pin.errFormat',
   PIN_WEAK: 'pin.errWeak',
   WRONG_PIN: 'pin.errWrong',

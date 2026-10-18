@@ -69,6 +69,11 @@ const ENDPOINTS_THAT_HANDLE_OWN_401 = ['/auth/login/select-wedding'];
 const handlesOwn401 = (url?: string) => !!url && ENDPOINTS_THAT_HANDLE_OWN_401.some((e) => url.endsWith(e));
 
 // Non-sensitive UX cache only (member + workspace). `wedding_token` is the pre-C-2 legacy key.
+export function saveLocalAuthCache(member: unknown, wedding: unknown) {
+  localStorage.setItem('wedding_member', JSON.stringify(member));
+  localStorage.setItem('wedding_data', JSON.stringify(wedding));
+}
+
 export function clearLocalAuthCache() {
   localStorage.removeItem('wedding_token');
   localStorage.removeItem('wedding_member');
@@ -82,8 +87,9 @@ function onAuthFailure() {
 
 // ── Silent access-token refresh (single-flight) ─────────────────────────────
 // Access token lives 15 min. The first 401 triggers ONE /auth/refresh shared by
-// all concurrent 401s, then the original request is retried. If refresh fails
-// the session is dead → clear cache + bounce to landing.
+// all concurrent 401s, then the original request is retried. Only a rejected
+// refresh (401/403) means the session is dead → clear cache + bounce to landing;
+// a rate limit, server error or network blip keeps the user signed in.
 const REFRESH_PATH = '/auth/refresh';
 let refreshPromise: Promise<unknown> | null = null;
 
@@ -102,8 +108,9 @@ api.interceptors.response.use(
         refreshPromise ??= api.post(REFRESH_PATH).finally(() => { refreshPromise = null; });
         await refreshPromise;
         return api(original);
-      } catch {
-        onAuthFailure();
+      } catch (refreshErr: any) {
+        const refreshStatus = refreshErr?.response?.status;
+        if (refreshStatus === 401 || refreshStatus === 403) onAuthFailure();
         return Promise.reject(error);
       }
     }

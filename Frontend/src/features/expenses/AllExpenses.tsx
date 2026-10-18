@@ -136,7 +136,7 @@ export default function AllExpenses() {
         if (signal.aborted || err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError' || err?.name === 'AbortError') return;
         toast.error(tServer(err.response?.data?.message) || t('all.errLoad'));
       } finally {
-        // Leave the dim/skeleton state alone on abort — the superseding request owns it.
+        // Leave the dim/loading state alone on abort — the superseding request owns it.
         if (!signal.aborted) {
           setLoading(false);
           setIsFetching(false);
@@ -183,7 +183,7 @@ export default function AllExpenses() {
   return (
     <div className="container page-content animate-in" style={{ paddingTop: 20 }}>
       <div className="page-header">
-        <button className="back-btn" onClick={() => navigate('/dashboard')} aria-label={t('add.backLabel')}>←</button>
+        <button className="back-btn hide-desktop" onClick={() => navigate('/dashboard')} aria-label={t('add.backLabel')}>←</button>
         <h1>{t('all.header')}</h1>
       </div>
 

@@ -6,6 +6,8 @@ interface Props {
   className?: string;
 }
 
+const THEME_EVENT = 'themechange';
+
 export default function ThemeToggle({ style, className }: Props) {
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('theme') || 'dark'; } catch { return 'dark'; }
@@ -17,8 +19,15 @@ export default function ThemeToggle({ style, className }: Props) {
     try { localStorage.setItem('theme', theme); } catch { /* ignore */ }
   }, [theme]);
 
+  // Several toggles can be mounted at once (sidebar + page header); keep them in step.
+  useEffect(() => {
+    const sync = (e: Event) => setTheme((e as CustomEvent<string>).detail);
+    window.addEventListener(THEME_EVENT, sync);
+    return () => window.removeEventListener(THEME_EVENT, sync);
+  }, []);
+
   const toggleTheme = () => {
-    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+    window.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: theme === 'dark' ? 'light' : 'dark' }));
   };
 
   const tooltip = theme === 'dark' ? t('theme.toLight') : t('theme.toDark');

@@ -144,7 +144,7 @@ export default function MyExpenses() {
   return (
     <div className="container page-content animate-in" style={{ paddingTop: 20 }}>
       <div className="page-header">
-        <button className="back-btn" onClick={() => navigate('/dashboard')} aria-label={t('add.backLabel')}>←</button>
+        <button className="back-btn hide-desktop" onClick={() => navigate('/dashboard')} aria-label={t('add.backLabel')}>←</button>
         <h1>{t('my.header')}</h1>
       </div>
 

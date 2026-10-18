@@ -4,7 +4,6 @@ import toast from 'react-hot-toast';
 import { useWedding } from '@/context/WeddingContext';
 import { useLang } from '@/context/LanguageContext';
 import { fmtAmount, fmtDate } from '@/utils/format';
-import { avatarColor } from '@/utils/avatarColor';
 import { getCurrentPayCycle } from './payCycle';
 import { getExpenseSummary } from '@/api';
 import ThemeToggle from '@/components/ThemeToggle';
@@ -12,6 +11,8 @@ import LanguageToggle from '@/components/LanguageToggle';
 import ExpenseDetailSheet from '@/features/expenses/ExpenseDetailSheet';
 import BudgetScoreCard from './BudgetScoreCard';
 import RollText from '@/components/RollText';
+import Loader from '@/components/Loader';
+import Avatar from '@/components/Avatar';
 
 // Format the selected calendar month label ("May 2026" / "मई 2026") for the
 // Personal-vertical month switcher.
@@ -135,7 +136,7 @@ export default function Dashboard() {
   const dailyTrend = summary?.dailyTrend || [];
 
   // Animated count for the hero number — only used once we know the value isn't
-  // mid-skeleton (`loading && !summary`) so we don't animate from 0 every load.
+  // mid-load (`loading && !summary`) so we don't animate from 0 every load.
   const animatedTotal = useCountUp(totalSpent);
   const fmt = (n: number) => fmtAmount(n, currency, t);
 
@@ -312,6 +313,7 @@ export default function Dashboard() {
   const hasCategories = (summary?.categoryBreakdown?.length ?? 0) > 0;
   const hasRecent = (summary?.recentExpenses?.length ?? 0) > 0;
   const hasTrend = trendBars.length > 0 && trendMax > 0;
+  const pairBreakdown = hasCategories && features.topContributors && hasContributors;
 
   // Build "tap a category to view its expenses" link for the breakdown rows.
   // Wedding/Trip routes to AllExpenses (everyone), Personal to MyExpenses.
@@ -320,13 +322,7 @@ export default function Dashboard() {
   if (loading && !summary) {
     return (
       <div className="container page-content" style={{ paddingTop: 20 }}>
-        <div className="skeleton" style={{ height: 60, marginBottom: 24, width: '60%' }} />
-        <div className="skeleton" style={{ height: 200, marginBottom: 16 }} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
-          <div className="skeleton" style={{ height: 92 }} />
-          <div className="skeleton" style={{ height: 92 }} />
-        </div>
-        <div className="skeleton" style={{ height: 240 }} />
+        <Loader label={t('common.loading')} />
       </div>
     );
   }
@@ -343,358 +339,440 @@ export default function Dashboard() {
             {wedding?.weddingName || t('dashboard.fallbackName')}
           </h1>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div className="hide-desktop" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <LanguageToggle />
           <ThemeToggle />
-          <div className="avatar" style={{ background: avatarColor(member?.name || ''), width: 44, height: 44, fontSize: '1rem' }}>
-            {(member?.name || 'U')[0].toUpperCase()}
-          </div>
+          <button type="button" onClick={() => navigate('/settings')} aria-label={t('nav.settings')} style={{ borderRadius: '50%' }}>
+            <Avatar name={member?.name} src={member?.avatar} size={44} />
+          </button>
         </div>
       </header>
 
-      {/* Month switcher — Personal vertical only */}
-      {features.monthlyBudget && (
-        <div className="surface-card month-switcher" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 'var(--space-3) var(--space-4)', marginBottom: 12 }}>
+      <div className="dash-layout">
+        <div className="dash-main">
+        {/* Month switcher — Personal vertical only */}
+        {features.monthlyBudget && (
+          <div className="surface-card month-switcher" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 'var(--space-3) var(--space-4)', marginBottom: 12 }}>
+            <button
+              type="button"
+              onClick={prevMonth}
+              aria-label={t('dashboard.prevMonth')}
+              className="btn btn-ghost"
+              style={{ minWidth: 44, padding: '6px 10px', fontSize: '1rem' }}
+            >
+              <RollText>◀
+            </RollText></button>
+            <button
+              type="button"
+              onClick={goToCurrentMonth}
+              disabled={isCurrentMonth}
+              className="btn btn-ghost"
+              style={{ flex: 1, fontWeight: 600, fontSize: '1rem', textAlign: 'center', padding: '6px 10px' }}
+              aria-label={t('dashboard.goToCurrentMonth')}
+              title={isCurrentMonth ? '' : t('dashboard.goToCurrentMonth')}
+            >
+              <RollText>{fmtMonth(selectedMonth, lang)}
+              {!isCurrentMonth && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 6 }}>↻</span>}</RollText>
+            </button>
+            <button
+              type="button"
+              onClick={nextMonth}
+              aria-label={t('dashboard.nextMonth')}
+              className="btn btn-ghost"
+              style={{ minWidth: 44, padding: '6px 10px', fontSize: '1rem' }}
+            >
+              <RollText>▶
+            </RollText></button>
+          </div>
+        )}
+
+        {isAdmin && pendingMembers.length > 0 && (
           <button
             type="button"
-            onClick={prevMonth}
-            aria-label={t('dashboard.prevMonth')}
-            className="btn btn-ghost"
-            style={{ minWidth: 44, padding: '6px 10px', fontSize: '1rem' }}
+            className="surface-card"
+            onClick={() => navigate('/members')}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, padding: 'var(--space-3) var(--space-4)', border: '1px solid var(--warning)', background: 'var(--warning-bg)', cursor: 'pointer', textAlign: 'left', color: 'inherit', font: 'inherit' }}
           >
-            <RollText>◀
-          </RollText></button>
-          <button
-            type="button"
-            onClick={goToCurrentMonth}
-            disabled={isCurrentMonth}
-            className="btn btn-ghost"
-            style={{ flex: 1, fontWeight: 600, fontSize: '1rem', textAlign: 'center', padding: '6px 10px' }}
-            aria-label={t('dashboard.goToCurrentMonth')}
-            title={isCurrentMonth ? '' : t('dashboard.goToCurrentMonth')}
-          >
-            <RollText>{fmtMonth(selectedMonth, lang)}
-            {!isCurrentMonth && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 6 }}>↻</span>}</RollText>
+            <span style={{ fontSize: '1.4rem' }} aria-hidden="true">🙋</span>
+            <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9rem' }}>{t('dashboard.pendingRequests', { count: pendingMembers.length })}</span>
+            <span style={{ color: 'var(--warning)', fontWeight: 700 }} aria-hidden="true">→</span>
           </button>
-          <button
-            type="button"
-            onClick={nextMonth}
-            aria-label={t('dashboard.nextMonth')}
-            className="btn btn-ghost"
-            style={{ minWidth: 44, padding: '6px 10px', fontSize: '1rem' }}
-          >
-            <RollText>▶
-          </RollText></button>
-        </div>
-      )}
+        )}
 
-      {isAdmin && pendingMembers.length > 0 && (
-        <button
-          type="button"
-          className="surface-card"
-          onClick={() => navigate('/members')}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, padding: 'var(--space-3) var(--space-4)', border: '1px solid var(--warning)', background: 'var(--warning-bg)', cursor: 'pointer', textAlign: 'left', color: 'inherit', font: 'inherit' }}
-        >
-          <span style={{ fontSize: '1.4rem' }} aria-hidden="true">🙋</span>
-          <span style={{ flex: 1, fontWeight: 600, fontSize: '0.9rem' }}>{t('dashboard.pendingRequests', { count: pendingMembers.length })}</span>
-          <span style={{ color: 'var(--warning)', fontWeight: 700 }} aria-hidden="true">→</span>
-        </button>
-      )}
+        {/* Total Expense Hero */}
+        <div className="hero-card sparkle" style={{ textAlign: 'center', marginBottom: 16, padding: 'var(--space-8) var(--space-5)' }}>
+          <p className="section-title" style={{ marginBottom: 6 }}>
+            {features.monthlyBudget ? t('dashboard.monthlySpent') : t('dashboard.totalExpenses')}
+          </p>
+          <h2 className="text-tnum" style={{ fontSize: 'clamp(2.4rem, 9vw, 3.2rem)', fontWeight: 800, color: 'var(--primary-light)', lineHeight: 1.05, letterSpacing: '-0.03em' }}>
+            {fmt(Math.round(animatedTotal))}
+          </h2>
+          {totalBudget > 0 && (
+            <div className="budget-bar-container">
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 8, fontWeight: 500 }}>
+                <span className="text-tnum">{t('dashboard.percentUsed', { percent: budgetPercent })}</span>
+                <span className="text-tnum">
+                  {remaining >= 0
+                    ? t('dashboard.amountLeft', { amount: fmt(remaining) })
+                    : t('dashboard.amountOver', { amount: fmt(Math.abs(remaining)) })}
+                </span>
+              </div>
+              <div className="budget-bar-bg">
+                <div className={`budget-bar-fill ${budgetPercent > 100 ? 'over-budget' : ''}`} style={{ width: `${Math.min(budgetPercent, 100)}%` }} />
+              </div>
+            </div>
+          )}
 
-      {/* Total Expense Hero */}
-      <div className="hero-card sparkle" style={{ textAlign: 'center', marginBottom: 16, padding: 'var(--space-8) var(--space-5)' }}>
-        <p className="section-title" style={{ marginBottom: 6 }}>
-          {features.monthlyBudget ? t('dashboard.monthlySpent') : t('dashboard.totalExpenses')}
-        </p>
-        <h2 className="text-tnum" style={{ fontSize: 'clamp(2.4rem, 9vw, 3.2rem)', fontWeight: 800, color: 'var(--primary-light)', lineHeight: 1.05, letterSpacing: '-0.03em' }}>
-          {fmt(Math.round(animatedTotal))}
-        </h2>
-        {totalBudget > 0 && (
-          <div className="budget-bar-container">
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 8, fontWeight: 500 }}>
-              <span className="text-tnum">{t('dashboard.percentUsed', { percent: budgetPercent })}</span>
-              <span className="text-tnum">
-                {remaining >= 0
-                  ? t('dashboard.amountLeft', { amount: fmt(remaining) })
-                  : t('dashboard.amountOver', { amount: fmt(Math.abs(remaining)) })}
+          {/* Budget pace pill — Personal only, when a budget exists */}
+          {features.monthlyBudget && pace.state && (
+            <div className="pace-row">
+              <span className={`pace-pill pace-${pace.state}`}>
+                <span className="pace-dot" />
+                {pace.state === 'ahead' && t('dashboard.paceAhead')}
+                {pace.state === 'warn' && t('dashboard.paceWarn', { pct: Math.abs(pace.pctVsPace) })}
+                {pace.state === 'over' && t('dashboard.paceOver')}
               </span>
+              {monthMetrics && isCurrentMonth && monthMetrics.projectedMonthEnd > 0 && (
+                <span className="pace-projection text-tnum" title={t('dashboard.projectionTitle')}>
+                  {t('dashboard.projected', { amount: fmt(Math.round(monthMetrics.projectedMonthEnd)) })}
+                </span>
+              )}
             </div>
-            <div className="budget-bar-bg">
-              <div className={`budget-bar-fill ${budgetPercent > 100 ? 'over-budget' : ''}`} style={{ width: `${Math.min(budgetPercent, 100)}%` }} />
-            </div>
+          )}
+
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 14, fontWeight: 500 }}>
+            {totalCount === 1 ? t('dashboard.expensesTrackedOne') : t('dashboard.expensesTracked', { count: totalCount })}
+          </p>
+        </div>
+
+        {/* L0 — Budget Score card. Renders only for Personal verticals with
+            at least one expense in the period. Self-gates internally so the
+            parent doesn't need to duplicate the `features.monthlyBudget`
+            check; layout is a no-op when collapsed. */}
+        {hasCategories && (
+          <div style={{ marginBottom: 16 }}>
+            <BudgetScoreCard categoryBreakdown={summary?.categoryBreakdown || []} />
           </div>
         )}
 
-        {/* Budget pace pill — Personal only, when a budget exists */}
-        {features.monthlyBudget && pace.state && (
-          <div className="pace-row">
-            <span className={`pace-pill pace-${pace.state}`}>
-              <span className="pace-dot" />
-              {pace.state === 'ahead' && t('dashboard.paceAhead')}
-              {pace.state === 'warn' && t('dashboard.paceWarn', { pct: Math.abs(pace.pctVsPace) })}
-              {pace.state === 'over' && t('dashboard.paceOver')}
-            </span>
-            {monthMetrics && isCurrentMonth && monthMetrics.projectedMonthEnd > 0 && (
-              <span className="pace-projection text-tnum" title={t('dashboard.projectionTitle')}>
-                {t('dashboard.projected', { amount: fmt(Math.round(monthMetrics.projectedMonthEnd)) })}
-              </span>
-            )}
-          </div>
-        )}
-
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 14, fontWeight: 500 }}>
-          {totalCount === 1 ? t('dashboard.expensesTrackedOne') : t('dashboard.expensesTracked', { count: totalCount })}
-        </p>
-      </div>
-
-      {/* L0 — Budget Score card. Renders only for Personal verticals with
-          at least one expense in the period. Self-gates internally so the
-          parent doesn't need to duplicate the `features.monthlyBudget`
-          check; layout is a no-op when collapsed. */}
-      {hasCategories && (
-        <div style={{ marginBottom: 16 }}>
-          <BudgetScoreCard categoryBreakdown={summary?.categoryBreakdown || []} />
-        </div>
-      )}
-
-      {/* Insight tiles — Personal-flavoured row of quick stats. For Wedding/Trip
-          this collapses to the original 2-stat grid (Contributors + Categories). */}
-      {features.monthlyBudget ? (
-        <div className="insight-grid stagger" style={{ marginBottom: 28 }}>
-          {monthMetrics && (
-            <div className="insight-tile">
-              <div className="insight-icon" aria-hidden="true">📊</div>
-              <div className="insight-value text-tnum">{fmt(Math.round(monthMetrics.avgPerDay))}</div>
-              <div className="insight-label">{t('dashboard.avgPerDay')}</div>
-            </div>
-          )}
-          {topCategory && (
-            <button
-              type="button"
-              className="insight-tile insight-tile-clickable"
-              onClick={() => navigate(`${categoryListPath}?category=${encodeURIComponent(topCategory._id)}`)}
-              aria-label={t('dashboard.openTopCategory')}
-            >
-              <div className="insight-icon" aria-hidden="true">
-                {wedding?.categories?.find(c => c.name === topCategory._id)?.icon || '🔥'}
-              </div>
-              <div className="insight-value insight-value-sm">{tCat(topCategory._id)}</div>
-              <div className="insight-label text-tnum">{fmt(topCategory.total)}</div>
-            </button>
-          )}
-          {largestExpense && (
-            <button
-              type="button"
-              className="insight-tile insight-tile-clickable"
-              onClick={() => setSelectedExpense(largestExpense)}
-              aria-label={t('dashboard.openLargestExpense')}
-            >
-              <div className="insight-icon" aria-hidden="true">💎</div>
-              <div className="insight-value text-tnum">{fmt(largestExpense.amount)}</div>
-              <div className="insight-label">{t('dashboard.largestExpense')}</div>
-            </button>
-          )}
-          {/* 4th tile is dynamic: pay-cycle runway when payDay is set, else
-              calendar "Days left in month". The runway only appears while the
-              user is viewing the current month — historical months would make
-              the cashflow tile misleading (the cycle anchors to "now"). */}
-          {payCycle && isCurrentMonth ? (
-            <div className="insight-tile insight-tile-runway">
-              <div className="insight-icon" aria-hidden="true">💰</div>
-              <div className="insight-value text-tnum">
-                {payCycle.daysUntilEnd === 0
-                  ? t('dashboard.runway.payToday')
-                  : payCycle.daysUntilEnd === 1
-                    ? t('dashboard.runway.tomorrow')
-                    : payCycle.daysUntilEnd}
-              </div>
-              <div className="insight-label">
-                {payCycle.daysUntilEnd > 1
-                  ? t('dashboard.runway.daysUntil', {
-                      date: fmtDate(payCycle.end, lang, { day: 'numeric', month: 'short' }),
-                    })
-                  : t('dashboard.runway.nextPayday')}
-              </div>
-              {cycleSpent != null && (
-                <div className="runway-foot text-tnum" title={t('dashboard.runway.spentTitle')}>
-                  {t('dashboard.runway.spentSinceLast', { amount: fmt(cycleSpent) })}
+        {/* Daily-spend trend chart — interactive bars over backend dailyTrend.
+            Each bar is a button; tapping selects it and the banner above updates.
+            Today and peak get permanent badges so the user can see them even
+            while another day is selected. */}
+        {hasTrend && (
+          <section className="dash-trend" style={{ marginBottom: 28 }}>
+            <h3 className="section-title">{t('dashboard.dailyTrend')}</h3>
+            <div className="surface-card trend-chart">
+              {/* Sticky info banner — shows whichever day is currently selected */}
+              {selectedBar && (
+                <div className="trend-banner">
+                  <div className="trend-banner-left">
+                    <span className="trend-banner-date">
+                      {fmtDate(selectedBar.date, lang, { weekday: 'short', day: 'numeric', month: 'short' })}
+                    </span>
+                    <div className="trend-banner-badges">
+                      {selectedBar.iso === todayIso && (
+                        <span className="trend-badge trend-badge-today">{t('dashboard.trendToday')}</span>
+                      )}
+                      {selectedBar.iso === trendPeak?.iso && (
+                        <span className="trend-badge trend-badge-peak">{t('dashboard.trendPeak')}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="trend-banner-right">
+                    <div className="trend-banner-amount text-tnum">
+                      {selectedBar.total > 0 ? fmt(selectedBar.total) : t('dashboard.trendNoSpend')}
+                    </div>
+                    {selectedBar.total > 0 && trendAvg > 0 && selectedBar.iso !== trendPeak?.iso && (
+                      <div className={`trend-banner-delta ${selectedBar.total >= trendAvg ? 'is-high' : 'is-low'}`}>
+                        {selectedBar.total >= trendAvg
+                          ? t('dashboard.trendVsAvgHigh', { pct: Math.round(((selectedBar.total - trendAvg) / trendAvg) * 100) })
+                          : t('dashboard.trendVsAvgLow', { pct: Math.round(((trendAvg - selectedBar.total) / trendAvg) * 100) })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
+
+              {/* Bar plot */}
+              <div
+                className="trend-plot"
+                role="group"
+                aria-label={t('dashboard.dailyTrend')}
+              >
+                {/* Dashed reference line at the daily-average mark */}
+                {trendAvg > 0 && trendMax > 0 && (
+                  <div
+                    className="trend-avg-line"
+                    style={{ bottom: `${(trendAvg / trendMax) * 100}%` }}
+                    aria-hidden="true"
+                  >
+                    <span className="trend-avg-label text-tnum">
+                      {t('dashboard.trendAvg', { amount: fmt(Math.round(trendAvg)) })}
+                    </span>
+                  </div>
+                )}
+
+                <div className="trend-bars">
+                  {trendBars.map((b, i) => {
+                    const pct = trendMax > 0 ? Math.max(b.total > 0 ? 6 : 3, Math.round((b.total / trendMax) * 100)) : 3;
+                    const isToday = b.iso === todayIso;
+                    const isPeak = b.total === trendMax && trendMax > 0 && b.iso === trendPeak?.iso;
+                    const isSelected = b.iso === selectedTrendIso;
+                    const dayNum = b.date.getDate();
+                    const ariaLabel = `${fmtDate(b.date, lang, { weekday: 'long', day: 'numeric', month: 'long' })} — ${b.total > 0 ? fmt(b.total) : t('dashboard.trendNoSpend')}`;
+                    return (
+                      <button
+                        key={b.iso}
+                        type="button"
+                        className={[
+                          'trend-bar-btn',
+                          isSelected && 'is-selected',
+                          isPeak && 'is-peak',
+                          isToday && 'is-today',
+                          b.total === 0 && 'is-empty',
+                        ].filter(Boolean).join(' ')}
+                        onClick={() => setSelectedTrendIso(b.iso)}
+                        aria-label={ariaLabel}
+                        aria-pressed={isSelected}
+                      >
+                        {/* Marker dot above today and peak so they're always findable */}
+                        {(isPeak || isToday) && (
+                          <span className={`trend-marker ${isPeak ? 'is-peak' : 'is-today'}`} aria-hidden="true">
+                            {isPeak ? '🔥' : '●'}
+                          </span>
+                        )}
+                        <span
+                          className="trend-bar-fill"
+                          style={{ height: `${pct}%`, animationDelay: `${Math.min(i * 14, 420)}ms` }}
+                        />
+                        {/* Day number — only on tick positions (sparse labels) */}
+                        {trendTicks.includes(i) && (
+                          <span className="trend-bar-tick text-tnum" aria-hidden="true">{dayNum}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <p className="trend-hint">{t('dashboard.trendHint')}</p>
+            </div>
+          </section>
+        )}
+
+        {/* Recent Activity — grouped by Today / Yesterday / This Week / Earlier */}
+        <section className="dash-recent" style={{ marginBottom: 28 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 className="section-title" style={{ marginBottom: 0 }}>{t('dashboard.recentActivity')}</h3>
+            {hasRecent && (
+              <button
+                className="btn btn-ghost btn-xs"
+                onClick={() => navigate(features.multiMember ? '/all-expenses' : '/my-expenses')}
+              >
+                <RollText>{t('dashboard.viewAll')}</RollText>
+              </button>
+            )}
+          </div>
+          {!hasRecent ? (
+            <div className="surface-card empty-state" style={{ padding: 'var(--space-10) var(--space-5)' }}>
+              <div className="emoji">📝</div>
+              <h3>{t('dashboard.empty')}</h3>
+              <p>{t('dashboard.emptyHint')}</p>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                style={{ marginTop: 'var(--space-5)' }}
+                onClick={() => navigate('/add')}
+              >
+                <RollText>{t('dashboard.addFirstExpense')}</RollText>
+              </button>
             </div>
           ) : (
-            monthMetrics && isCurrentMonth && (
-              <div className="insight-tile">
-                <div className="insight-icon" aria-hidden="true">📅</div>
-                <div className="insight-value text-tnum">{monthMetrics.daysLeft}</div>
-                <div className="insight-label">
-                  {monthMetrics.daysLeft === 1 ? t('dashboard.dayLeftOne') : t('dashboard.daysLeft')}
-                </div>
-              </div>
-            )
-          )}
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: features.multiMember ? '1fr 1fr' : '1fr', gap: 12, marginBottom: 28 }}>
-          {features.multiMember && (
-            <div className="stat-card stat-card-primary">
-              <span className="stat-icon" aria-hidden="true">👥</span>
-              <div className="stat-value" style={{ color: 'var(--primary)' }}>{summary?.memberBreakdown?.length || 0}</div>
-              <div className="stat-label">{t('dashboard.contributors')}</div>
+            <div className="activity-feed">
+              {(['today', 'yesterday', 'week', 'earlier'] as const).map((groupId) => {
+                const items = groupedRecent[groupId];
+                if (!items.length) return null;
+                const groupTotal = items.reduce((s, e) => s + e.amount, 0);
+                return (
+                  <div key={groupId} className="activity-group">
+                    <div className="activity-group-head">
+                      <span className="activity-group-label">{t(`dashboard.group.${groupId}`)}</span>
+                      <span className="text-tnum activity-group-total">{fmt(groupTotal)}</span>
+                    </div>
+                    <div className="stagger">
+                      {items.map((exp) => {
+                        const icon = wedding?.categories?.find(c => c.name === exp.category)?.icon || '📦';
+                        return (
+                          <div
+                            key={exp._id}
+                            className="expense-item"
+                            onClick={() => setSelectedExpense(exp)}
+                            style={{ cursor: 'pointer' }}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => e.key === 'Enter' && setSelectedExpense(exp)}
+                          >
+                            <div className="expense-icon">{icon}</div>
+                            <div className="expense-info">
+                              <h4>{exp.description || tCat(exp.category)}</h4>
+                              <p>
+                                {features.multiMember && (
+                                  <>{exp.memberId?.name || t('common.unknown')} • </>
+                                )}
+                                {fmtDate(exp.createdAt, lang)}
+                              </p>
+                              {exp.receiptUrl && (
+                                <span className="receipt-badge" style={{ marginTop: 4 }}>
+                                  {t('receipt.badge')}
+                                </span>
+                              )}
+                            </div>
+                            <div className="expense-amount">{fmt(exp.amount)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
-          <div className="stat-card stat-card-accent">
-            <span className="stat-icon" aria-hidden="true">📂</span>
-            <div className="stat-value" style={{ color: 'var(--accent)' }}>{summary?.categoryBreakdown?.length || 0}</div>
-            <div className="stat-label">{t('dashboard.categoriesUsed')}</div>
-          </div>
-        </div>
-      )}
+        </section>
 
-      {/* Daily-spend trend chart — interactive bars over backend dailyTrend.
-          Each bar is a button; tapping selects it and the banner above updates.
-          Today and peak get permanent badges so the user can see them even
-          while another day is selected. */}
-      {hasTrend && (
-        <section style={{ marginBottom: 28 }}>
-          <h3 className="section-title">{t('dashboard.dailyTrend')}</h3>
-          <div className="surface-card trend-chart">
-            {/* Sticky info banner — shows whichever day is currently selected */}
-            {selectedBar && (
-              <div className="trend-banner">
-                <div className="trend-banner-left">
-                  <span className="trend-banner-date">
-                    {fmtDate(selectedBar.date, lang, { weekday: 'short', day: 'numeric', month: 'short' })}
-                  </span>
-                  <div className="trend-banner-badges">
-                    {selectedBar.iso === todayIso && (
-                      <span className="trend-badge trend-badge-today">{t('dashboard.trendToday')}</span>
-                    )}
-                    {selectedBar.iso === trendPeak?.iso && (
-                      <span className="trend-badge trend-badge-peak">{t('dashboard.trendPeak')}</span>
-                    )}
-                  </div>
-                </div>
-                <div className="trend-banner-right">
-                  <div className="trend-banner-amount text-tnum">
-                    {selectedBar.total > 0 ? fmt(selectedBar.total) : t('dashboard.trendNoSpend')}
-                  </div>
-                  {selectedBar.total > 0 && trendAvg > 0 && selectedBar.iso !== trendPeak?.iso && (
-                    <div className={`trend-banner-delta ${selectedBar.total >= trendAvg ? 'is-high' : 'is-low'}`}>
-                      {selectedBar.total >= trendAvg
-                        ? t('dashboard.trendVsAvgHigh', { pct: Math.round(((selectedBar.total - trendAvg) / trendAvg) * 100) })
-                        : t('dashboard.trendVsAvgLow', { pct: Math.round(((trendAvg - selectedBar.total) / trendAvg) * 100) })}
-                    </div>
-                  )}
-                </div>
+        </div>
+
+        <aside className="dash-side">
+        {/* Insight tiles — Personal-flavoured row of quick stats. For Wedding/Trip
+            this collapses to the original 2-stat grid (Contributors + Categories). */}
+        {features.monthlyBudget ? (
+          <div className="dash-stats insight-grid stagger" style={{ marginBottom: 28 }}>
+            {monthMetrics && (
+              <div className="insight-tile">
+                <div className="insight-icon" aria-hidden="true">📊</div>
+                <div className="insight-value text-tnum">{fmt(Math.round(monthMetrics.avgPerDay))}</div>
+                <div className="insight-label">{t('dashboard.avgPerDay')}</div>
               </div>
             )}
-
-            {/* Bar plot */}
-            <div
-              className="trend-plot"
-              role="group"
-              aria-label={t('dashboard.dailyTrend')}
-            >
-              {/* Dashed reference line at the daily-average mark */}
-              {trendAvg > 0 && trendMax > 0 && (
-                <div
-                  className="trend-avg-line"
-                  style={{ bottom: `${(trendAvg / trendMax) * 100}%` }}
-                  aria-hidden="true"
-                >
-                  <span className="trend-avg-label text-tnum">
-                    {t('dashboard.trendAvg', { amount: fmt(Math.round(trendAvg)) })}
-                  </span>
+            {topCategory && (
+              <button
+                type="button"
+                className="insight-tile insight-tile-clickable"
+                onClick={() => navigate(`${categoryListPath}?category=${encodeURIComponent(topCategory._id)}`)}
+                aria-label={t('dashboard.openTopCategory')}
+              >
+                <div className="insight-icon" aria-hidden="true">
+                  {wedding?.categories?.find(c => c.name === topCategory._id)?.icon || '🔥'}
                 </div>
-              )}
-
-              <div className="trend-bars">
-                {trendBars.map((b, i) => {
-                  const pct = trendMax > 0 ? Math.max(b.total > 0 ? 6 : 3, Math.round((b.total / trendMax) * 100)) : 3;
-                  const isToday = b.iso === todayIso;
-                  const isPeak = b.total === trendMax && trendMax > 0 && b.iso === trendPeak?.iso;
-                  const isSelected = b.iso === selectedTrendIso;
-                  const dayNum = b.date.getDate();
-                  const ariaLabel = `${fmtDate(b.date, lang, { weekday: 'long', day: 'numeric', month: 'long' })} — ${b.total > 0 ? fmt(b.total) : t('dashboard.trendNoSpend')}`;
-                  return (
-                    <button
-                      key={b.iso}
-                      type="button"
-                      className={[
-                        'trend-bar-btn',
-                        isSelected && 'is-selected',
-                        isPeak && 'is-peak',
-                        isToday && 'is-today',
-                        b.total === 0 && 'is-empty',
-                      ].filter(Boolean).join(' ')}
-                      onClick={() => setSelectedTrendIso(b.iso)}
-                      aria-label={ariaLabel}
-                      aria-pressed={isSelected}
-                    >
-                      {/* Marker dot above today and peak so they're always findable */}
-                      {(isPeak || isToday) && (
-                        <span className={`trend-marker ${isPeak ? 'is-peak' : 'is-today'}`} aria-hidden="true">
-                          {isPeak ? '🔥' : '●'}
-                        </span>
-                      )}
-                      <span
-                        className="trend-bar-fill"
-                        style={{ height: `${pct}%`, animationDelay: `${Math.min(i * 14, 420)}ms` }}
-                      />
-                      {/* Day number — only on tick positions (sparse labels) */}
-                      {trendTicks.includes(i) && (
-                        <span className="trend-bar-tick text-tnum" aria-hidden="true">{dayNum}</span>
-                      )}
-                    </button>
-                  );
-                })}
+                <div className="insight-value insight-value-sm">{tCat(topCategory._id)}</div>
+                <div className="insight-label text-tnum">{fmt(topCategory.total)}</div>
+              </button>
+            )}
+            {largestExpense && (
+              <button
+                type="button"
+                className="insight-tile insight-tile-clickable"
+                onClick={() => setSelectedExpense(largestExpense)}
+                aria-label={t('dashboard.openLargestExpense')}
+              >
+                <div className="insight-icon" aria-hidden="true">💎</div>
+                <div className="insight-value text-tnum">{fmt(largestExpense.amount)}</div>
+                <div className="insight-label">{t('dashboard.largestExpense')}</div>
+              </button>
+            )}
+            {/* 4th tile is dynamic: pay-cycle runway when payDay is set, else
+                calendar "Days left in month". The runway only appears while the
+                user is viewing the current month — historical months would make
+                the cashflow tile misleading (the cycle anchors to "now"). */}
+            {payCycle && isCurrentMonth ? (
+              <div className="insight-tile insight-tile-runway">
+                <div className="insight-icon" aria-hidden="true">💰</div>
+                <div className="insight-value text-tnum">
+                  {payCycle.daysUntilEnd === 0
+                    ? t('dashboard.runway.payToday')
+                    : payCycle.daysUntilEnd === 1
+                      ? t('dashboard.runway.tomorrow')
+                      : payCycle.daysUntilEnd}
+                </div>
+                <div className="insight-label">
+                  {payCycle.daysUntilEnd > 1
+                    ? t('dashboard.runway.daysUntil', {
+                        date: fmtDate(payCycle.end, lang, { day: 'numeric', month: 'short' }),
+                      })
+                    : t('dashboard.runway.nextPayday')}
+                </div>
+                {cycleSpent != null && (
+                  <div className="runway-foot text-tnum" title={t('dashboard.runway.spentTitle')}>
+                    {t('dashboard.runway.spentSinceLast', { amount: fmt(cycleSpent) })}
+                  </div>
+                )}
               </div>
+            ) : (
+              monthMetrics && isCurrentMonth && (
+                <div className="insight-tile">
+                  <div className="insight-icon" aria-hidden="true">📅</div>
+                  <div className="insight-value text-tnum">{monthMetrics.daysLeft}</div>
+                  <div className="insight-label">
+                    {monthMetrics.daysLeft === 1 ? t('dashboard.dayLeftOne') : t('dashboard.daysLeft')}
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        ) : (
+          <div className="dash-stats" style={{ display: 'grid', gridTemplateColumns: features.multiMember ? '1fr 1fr' : '1fr', gap: 12, marginBottom: 28 }}>
+            {features.multiMember && (
+              <div className="stat-card stat-card-primary">
+                <span className="stat-icon" aria-hidden="true">👥</span>
+                <div className="stat-value" style={{ color: 'var(--primary)' }}>{summary?.memberBreakdown?.length || 0}</div>
+                <div className="stat-label">{t('dashboard.contributors')}</div>
+              </div>
+            )}
+            <div className="stat-card stat-card-accent">
+              <span className="stat-icon" aria-hidden="true">📂</span>
+              <div className="stat-value" style={{ color: 'var(--accent)' }}>{summary?.categoryBreakdown?.length || 0}</div>
+              <div className="stat-label">{t('dashboard.categoriesUsed')}</div>
             </div>
-
-            <p className="trend-hint">{t('dashboard.trendHint')}</p>
           </div>
-        </section>
-      )}
+        )}
 
-      {/* Quick-add chips — 1-tap expense entry pre-selecting a category. */}
-      {quickAddCats.length > 0 && (
-        <section style={{ marginBottom: 28 }}>
-          <h3 className="section-title">{t('dashboard.quickAdd')}</h3>
-          <div className="quick-add-row">
-            {quickAddCats.map((catName) => {
-              const cat = wedding?.categories?.find(c => c.name === catName);
-              if (!cat) return null;
-              return (
-                <button
-                  key={cat.name}
-                  type="button"
-                  className="quick-add-chip"
-                  onClick={() => navigate(`/add?category=${encodeURIComponent(cat.name)}`)}
-                  aria-label={t('dashboard.quickAddTo', { name: tCat(cat.name) })}
-                >
-                  <span className="qa-icon" aria-hidden="true">{cat.icon}</span>
-                  <span className="qa-name">{tCat(cat.name)}</span>
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              className="quick-add-chip quick-add-chip-more"
-              onClick={() => navigate('/add')}
-              aria-label={t('dashboard.quickAddCustom')}
-            >
-              <span className="qa-icon" aria-hidden="true">＋</span>
-              <span className="qa-name">{t('dashboard.quickAddCustom')}</span>
-            </button>
-          </div>
-        </section>
-      )}
+        {/* Quick-add chips — 1-tap expense entry pre-selecting a category. */}
+        {quickAddCats.length > 0 && (
+          <section className="dash-breakdown" style={{ marginBottom: 28 }}>
+            <h3 className="section-title">{t('dashboard.quickAdd')}</h3>
+            <div className="quick-add-row">
+              {quickAddCats.map((catName) => {
+                const cat = wedding?.categories?.find(c => c.name === catName);
+                if (!cat) return null;
+                return (
+                  <button
+                    key={cat.name}
+                    type="button"
+                    className="quick-add-chip"
+                    onClick={() => navigate(`/add?category=${encodeURIComponent(cat.name)}`)}
+                    aria-label={t('dashboard.quickAddTo', { name: tCat(cat.name) })}
+                  >
+                    <span className="qa-icon" aria-hidden="true">{cat.icon}</span>
+                    <span className="qa-name">{tCat(cat.name)}</span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                className="quick-add-chip quick-add-chip-more"
+                onClick={() => navigate('/add')}
+                aria-label={t('dashboard.quickAddCustom')}
+              >
+                <span className="qa-icon" aria-hidden="true">＋</span>
+                <span className="qa-name">{t('dashboard.quickAddCustom')}</span>
+              </button>
+            </div>
+          </section>
+        )}
 
-      {/* Two-column on tablet+ for Categories & Top Contributors */}
-      <div className="grid-tablet-2">
         {/* Category Breakdown — tappable rows drill into the filtered list */}
         {hasCategories && summary && (
-          <section style={{ marginBottom: 28 }}>
+          <section className={`dash-breakdown${pairBreakdown ? ' dash-pair' : ''}`} style={{ marginBottom: 28 }}>
             <h3 className="section-title">{t('dashboard.spendingByCategory')}</h3>
             <div className="surface-card category-list" style={{ padding: 'var(--space-4)' }}>
               {(showAllCats ? summary.categoryBreakdown : summary.categoryBreakdown.slice(0, 6)).map((cat, idx, arr) => {
@@ -752,14 +830,12 @@ export default function Dashboard() {
 
         {/* Top Contributors — single-member verticals (Personal) hide this entirely */}
         {features.topContributors && hasContributors && summary && (
-          <section style={{ marginBottom: 28 }}>
+          <section className={`dash-breakdown${pairBreakdown ? ' dash-pair' : ''}`} style={{ marginBottom: 28 }}>
             <h3 className="section-title">{t('dashboard.topContributors')}</h3>
             <div className="stagger">
               {summary.memberBreakdown.slice(0, 5).map((m, i) => (
                 <div key={m._id} className={`expense-item ${i === 0 ? 'podium-1' : i === 1 ? 'podium-2' : i === 2 ? 'podium-3' : ''}`}>
-                  <div className="avatar" style={{ background: avatarColor(m.name), width: 42, height: 42, fontSize: '0.95rem' }}>
-                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (m.name || 'U')[0].toUpperCase()}
-                  </div>
+                  <Avatar name={m.name} src={m.avatar} size={42} badge={['🥇', '🥈', '🥉'][i]} />
                   <div className="expense-info">
                     <h4>{m.name}</h4>
                     <p>
@@ -774,111 +850,34 @@ export default function Dashboard() {
             </div>
           </section>
         )}
-      </div>
 
-      {/* Recent Activity — grouped by Today / Yesterday / This Week / Earlier */}
-      <section style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h3 className="section-title" style={{ marginBottom: 0 }}>{t('dashboard.recentActivity')}</h3>
-          {hasRecent && (
+        {/* Join Code Card */}
+        {features.joinCode && wedding?.joinCode && (
+          <div className="dash-share hero-card sparkle" style={{ textAlign: 'center', marginBottom: 16 }}>
+            <p className="section-title" style={{ marginBottom: 8 }}>{t('dashboard.shareCode')}</p>
+            <div className="text-tnum" style={{
+              fontSize: '2rem',
+              fontWeight: 800,
+              letterSpacing: '8px',
+              color: 'var(--primary-light)',
+              marginBottom: 14,
+            }}>
+              {wedding.joinCode}
+            </div>
             <button
-              className="btn btn-ghost btn-xs"
-              onClick={() => navigate(features.multiMember ? '/all-expenses' : '/my-expenses')}
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                navigator.clipboard.writeText(wedding.joinCode);
+                toast.success(t('common.codeCopied'));
+              }}
             >
-              <RollText>{t('dashboard.viewAll')}</RollText>
+              <RollText>{t('dashboard.copyCode')}</RollText>
             </button>
-          )}
-        </div>
-        {!hasRecent ? (
-          <div className="surface-card empty-state" style={{ padding: 'var(--space-10) var(--space-5)' }}>
-            <div className="emoji">📝</div>
-            <h3>{t('dashboard.empty')}</h3>
-            <p>{t('dashboard.emptyHint')}</p>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              style={{ marginTop: 'var(--space-5)' }}
-              onClick={() => navigate('/add')}
-            >
-              <RollText>{t('dashboard.addFirstExpense')}</RollText>
-            </button>
-          </div>
-        ) : (
-          <div className="activity-feed">
-            {(['today', 'yesterday', 'week', 'earlier'] as const).map((groupId) => {
-              const items = groupedRecent[groupId];
-              if (!items.length) return null;
-              const groupTotal = items.reduce((s, e) => s + e.amount, 0);
-              return (
-                <div key={groupId} className="activity-group">
-                  <div className="activity-group-head">
-                    <span className="activity-group-label">{t(`dashboard.group.${groupId}`)}</span>
-                    <span className="text-tnum activity-group-total">{fmt(groupTotal)}</span>
-                  </div>
-                  <div className="stagger">
-                    {items.map((exp) => {
-                      const icon = wedding?.categories?.find(c => c.name === exp.category)?.icon || '📦';
-                      return (
-                        <div
-                          key={exp._id}
-                          className="expense-item"
-                          onClick={() => setSelectedExpense(exp)}
-                          style={{ cursor: 'pointer' }}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => e.key === 'Enter' && setSelectedExpense(exp)}
-                        >
-                          <div className="expense-icon">{icon}</div>
-                          <div className="expense-info">
-                            <h4>{exp.description || tCat(exp.category)}</h4>
-                            <p>
-                              {features.multiMember && (
-                                <>{exp.memberId?.name || t('common.unknown')} • </>
-                              )}
-                              {fmtDate(exp.createdAt, lang)}
-                            </p>
-                            {exp.receiptUrl && (
-                              <span className="receipt-badge" style={{ marginTop: 4 }}>
-                                {t('receipt.badge')}
-                              </span>
-                            )}
-                          </div>
-                          <div className="expense-amount">{fmt(exp.amount)}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
           </div>
         )}
-      </section>
 
-      {/* Join Code Card */}
-      {features.joinCode && wedding?.joinCode && (
-        <div className="hero-card sparkle" style={{ textAlign: 'center', marginBottom: 16 }}>
-          <p className="section-title" style={{ marginBottom: 8 }}>{t('dashboard.shareCode')}</p>
-          <div className="text-tnum" style={{
-            fontSize: '2rem',
-            fontWeight: 800,
-            letterSpacing: '8px',
-            color: 'var(--primary-light)',
-            marginBottom: 14,
-          }}>
-            {wedding.joinCode}
-          </div>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => {
-              navigator.clipboard.writeText(wedding.joinCode);
-              toast.success(t('common.codeCopied'));
-            }}
-          >
-            <RollText>{t('dashboard.copyCode')}</RollText>
-          </button>
-        </div>
-      )}
+        </aside>
+      </div>
 
       {/* Expense Detail Sheet */}
       <ExpenseDetailSheet
