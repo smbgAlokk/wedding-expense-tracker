@@ -3,13 +3,17 @@ const router = express.Router();
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const validator = require('validator');
+const rateLimit = require('express-rate-limit');
 const Member = require('../../models/Member');
 const Wedding = require('../../models/Wedding');
+const Expense = require('../../models/Expense');
 const { asyncHandler } = require('../../middleware/errorHandler');
+const { imageUpload } = require('../../middleware/imageUpload');
 const {
   protect,
   protectAllowPending,
   issueSession,
+  sessionLinks,
   generateAccessToken,
   generateSelectorToken,
   verifySelectorToken,
@@ -33,6 +37,8 @@ const { frontendUrl } = require('../../utils/frontendUrl');
 const { MIN_PASSWORD_LENGTH, PASSWORD_LENGTH_MESSAGE } = require('../../constants/auth');
 const { usesPin, pinProblem, hashPin, attemptWithLockout, sendPinError } = require('../../services/pinAuth');
 const { requiresApproval, pendingLimitReached, readmit, publicWedding, notifyJoinRequest } = require('../../services/membership');
+const { cleanName, nameKey, nameTaken, sendNameError } = require('../../services/memberName');
+const { isConfigured: isCloudinaryConfigured, uploadToCloudinary, deleteFromCloudinary } = require('../../integrations/cloudinary');
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 const RESEND_COOLDOWN_MS = 60 * 1000; // keep in sync with VERIFY_RESEND_COOLDOWN_S on the client
@@ -305,7 +311,7 @@ router.post('/login/select-wedding', asyncHandler(async (req, res) => {
 
   await readmit(member);
 
-  await issueSession(res, req, member);
+  await issueSession(res, req, member, payload.members); // links = what the password/Google check unlocked
 
   res.status(200).json({
     success: true,
@@ -352,6 +358,8 @@ router.post('/google', asyncHandler(async (req, res) => {
   }
 
   const allMemberships = await Member.find({ email: email.toLowerCase() }).populate('weddingId');
+  // Google verified this email, so every non-banned membership on it is switchable.
+  const googleLinked = allMemberships.filter((m) => m.weddingId && !m.bannedAt).map((m) => m._id);
   // Banned / declined memberships can't be entered, so never offer them.
   const existingMembers = allMemberships.filter((m) =>
     m.weddingId && !m.bannedAt && (!wedding || m.weddingId._id.equals(wedding._id)));
@@ -411,7 +419,7 @@ router.post('/google', asyncHandler(async (req, res) => {
     if (member.bannedAt) {
       return res.status(403).json({ success: false, message: 'This account can no longer access this wedding.' });
     }
-    await issueSession(res, req, member);
+    await issueSession(res, req, member, googleLinked);
 
     return res.status(200).json({
       success: true,
@@ -451,7 +459,7 @@ router.post('/google', asyncHandler(async (req, res) => {
     });
     if (pending) notifyJoinRequest(wedding, member);
 
-    await issueSession(res, req, member);
+    await issueSession(res, req, member, googleLinked);
 
     return res.status(pending ? 202 : 201).json({
       success: true,
@@ -816,6 +824,95 @@ router.put('/pin', protect, asyncHandler(async (req, res) => {
   return res.status(200).json({ success: true, message: 'Your PIN has been saved.', data: { member } });
 }));
 
+// ─── Profile: display name + photo (own account only) ───────────────────────
+
+// Per account (runs after protect): every photo costs Cloudinary storage and
+// processing, and a name that keeps changing confuses the family. Only applied
+// changes count — typos are free; PIN guessing has its own lockout.
+const profileLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  skipFailedRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.member._id),
+  message: { success: false, message: 'Too many profile changes. Please try again in an hour.' },
+});
+
+/**
+ * PATCH /api/auth/profile  { name, pin? }
+ * For join-code members the name is half of the sign-in credential, so — like
+ * a password change — the current PIN is required (under the PIN lockout).
+ * Names stay unique per workspace; the member's own default "paid by" labels
+ * on past expenses follow the rename.
+ */
+router.patch('/profile', protect, profileLimiter, asyncHandler(async (req, res) => {
+  const name = cleanName(req.body.name);
+  if (!name) return sendNameError(res, 'invalid');
+
+  const member = await Member.findById(req.member._id).select('+password +pinHash +loginAttempts +lockedUntil');
+  if (!member) return res.status(404).json({ success: false, message: 'Account not found.' });
+  if (member.name === name) return res.status(200).json({ success: true, data: { member } });
+
+  if (usesPin(member)) {
+    if (!member.pinHash) {
+      return res.status(400).json({ success: false, code: 'PIN_REQUIRED', message: 'Set a PIN first — you need it to sign in with your new name.' });
+    }
+    const result = await attemptWithLockout(member, async () =>
+      typeof req.body.pin === 'string' && bcrypt.compare(req.body.pin, member.pinHash));
+    if (result !== 'ok') return sendPinError(res, result);
+  }
+
+  if (await nameTaken(member.weddingId, name, member._id)) return sendNameError(res, 'taken');
+
+  const from = member.name;
+  member.name = name;
+  member.nameKey = nameKey(name);
+  try {
+    await member.save();
+  } catch (err) {
+    if (err.code === 11000) return sendNameError(res, 'taken');
+    throw err;
+  }
+  await Expense.updateMany({ weddingId: member.weddingId, memberId: member._id, paidBy: from }, { $set: { paidBy: name } });
+  recordAudit(req, 'member.rename', { target: String(member._id), meta: { from, to: name } });
+
+  return res.status(200).json({ success: true, message: 'Your name has been updated.', data: { member } });
+}));
+
+// One fixed asset per membership: a new photo overwrites (and CDN-purges) the
+// old one, so replacing or removing never leaves orphans. Stored as a 256px
+// subject-centred square; metadata is not kept.
+const avatarPublicId = (req) => `avatars/${req.weddingId}/${req.member._id}`;
+const AVATAR_TRANSFORM = [{ width: 256, height: 256, crop: 'fill', gravity: 'auto', quality: 'auto', fetch_format: 'auto' }];
+const avatarUpload = imageUpload('avatar', { label: 'Profile photo', maxMB: 5 });
+
+/** PUT /api/auth/avatar (multipart `avatar`) — set or replace the profile photo. */
+router.put('/avatar', protect, profileLimiter, avatarUpload, asyncHandler(async (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: 'Please choose a photo.' });
+  if (!isCloudinaryConfigured()) {
+    return res.status(503).json({ success: false, message: 'Photo uploads are not available right now.' });
+  }
+  let url;
+  try {
+    ({ url } = await uploadToCloudinary(req.file.buffer, { publicId: avatarPublicId(req), transformation: AVATAR_TRANSFORM }));
+  } catch (err) {
+    req.log.error({ err: err.message }, 'avatar upload: Cloudinary error');
+    return res.status(502).json({ success: false, message: 'Could not upload your photo. Please try again.' });
+  }
+  const member = await Member.findByIdAndUpdate(req.member._id, { $set: { avatar: url } }, { new: true });
+  recordAudit(req, 'member.avatar_set', { target: String(req.member._id) });
+  return res.status(200).json({ success: true, message: 'Profile photo updated.', data: { member } });
+}));
+
+/** DELETE /api/auth/avatar — remove the profile photo (back to initials). */
+router.delete('/avatar', protect, profileLimiter, asyncHandler(async (req, res) => {
+  const member = await Member.findByIdAndUpdate(req.member._id, { $set: { avatar: '' } }, { new: true });
+  if (isCloudinaryConfigured()) deleteFromCloudinary(avatarPublicId(req));
+  recordAudit(req, 'member.avatar_remove', { target: String(req.member._id) });
+  return res.status(200).json({ success: true, message: 'Profile photo removed.', data: { member } });
+}));
+
 /**
  * GET /api/auth/me
  * Session probe + bootstrap. Returns the current member + wedding if the access
@@ -831,6 +928,68 @@ router.get('/me', protectAllowPending, asyncHandler(async (req, res) => {
     return res.status(401).json({ success: false, message: 'Session not found. Please sign in again.' });
   }
   return res.status(200).json({ success: true, data: { member, wedding: wedding && publicWedding(wedding, member) } });
+}));
+
+// ─── Account switching ───────────────────────────────────────────────────────
+// Switchable = exactly the memberships this sign-in's credential proved: the
+// password matched them, or Google verified their email (stored server-side
+// on the refresh token, see sessionLinks). Matching by email alone would be
+// unsafe: anyone can sign up with someone else's address, and a later
+// verification click verifies every membership on it. Both routes use this one
+// function, so what is listed and what may be entered always agree.
+async function switchableMemberships(req) {
+  const ids = await sessionLinks(req);
+  const list = await Member.find({ _id: { $in: ids }, isActive: true, bannedAt: null })
+    .select('weddingId role status')
+    .populate('weddingId', 'weddingName type isActive')
+    .lean();
+  return list.filter((m) => m.weddingId && m.weddingId.isActive !== false);
+}
+
+/**
+ * GET /api/auth/accounts
+ * Workspaces the signed-in person can switch to (current one first).
+ */
+router.get('/accounts', protectAllowPending, asyncHandler(async (req, res) => {
+  const list = await switchableMemberships(req);
+  const currentId = String(req.member._id);
+  const accounts = list
+    .map((m) => ({
+      memberId: m._id,
+      workspaceName: m.weddingId.weddingName,
+      type: m.weddingId.type || 'wedding',
+      role: m.role,
+      pending: m.status === 'pending',
+      current: String(m._id) === currentId,
+    }))
+    .sort((a, b) => b.current - a.current);
+  res.status(200).json({ success: true, data: { accounts } });
+}));
+
+/**
+ * POST /api/auth/switch
+ * Moves this device's session to another of the person's memberships: the
+ * current refresh token is revoked and a fresh session is issued for the
+ * target, so cookies never hold more than one account's credentials.
+ */
+router.post('/switch', protectAllowPending, asyncHandler(async (req, res) => {
+  const { memberId } = req.body;
+  const links = await sessionLinks(req);
+  const list = await switchableMemberships(req);
+  const target = typeof memberId === 'string' && list.find((m) => String(m._id) === memberId);
+  if (!target) {
+    return res.status(404).json({ success: false, code: 'ACCOUNT_NOT_FOUND', message: 'That account is not available to switch to.' });
+  }
+  if (String(target._id) === String(req.member._id)) {
+    return res.status(400).json({ success: false, code: 'ALREADY_CURRENT', message: 'You are already using this account.' });
+  }
+
+  const [member, wedding] = await Promise.all([Member.findById(target._id), Wedding.findById(target.weddingId._id)]);
+  await revokeRefreshToken(req.cookies && req.cookies[REFRESH_COOKIE]);
+  await issueSession(res, req, member, links); // same switchable set, new session
+  recordAudit(req, 'auth.switch', { target: String(member._id), meta: { toWorkspace: String(wedding._id) } });
+
+  res.status(200).json({ success: true, data: { member, wedding: publicWedding(wedding, member) } });
 }));
 
 module.exports = router;

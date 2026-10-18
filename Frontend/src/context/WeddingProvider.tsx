@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
-import { getCurrentWedding, getExpenseSummary, getWeddingMembers, getMe, logoutUser } from '@/api';
+import { getCurrentWedding, getExpenseSummary, getWeddingMembers, getMe, logoutUser, saveLocalAuthCache } from '@/api';
 import type {
   Wedding,
   Member,
@@ -49,11 +49,26 @@ export function WeddingProvider({ children }: WeddingProviderProps) {
 
   const login = useCallback((memberData: Member, weddingData: Wedding) => {
     // member + wedding are non-sensitive UX cache only — no token here.
-    localStorage.setItem('wedding_member', JSON.stringify(memberData));
-    localStorage.setItem('wedding_data', JSON.stringify(weddingData));
+    saveLocalAuthCache(memberData, weddingData);
     setMember(memberData);
     setWedding(weddingData);
   }, []);
+
+  // Another tab switched account or signed out: this tab's screen no longer
+  // matches the shared session cookies, so reload into the current session.
+  // Same account (e.g. renamed / new photo there): just adopt the fresh copy.
+  const memberId = member?._id;
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== 'wedding_member' && e.key !== null) return;
+      let next: Member | null = null;
+      try { next = JSON.parse(e.newValue || 'null'); } catch { /* treat as signed out */ }
+      if (next?._id !== memberId) window.location.reload();
+      else if (next) setMember(next);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [memberId]);
 
   const logout = useCallback(() => {
     // Best-effort server-side revocation of this device's refresh token; clear

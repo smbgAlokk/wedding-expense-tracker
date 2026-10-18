@@ -228,7 +228,7 @@ export default function AddExpense() {
   // ─── Guard: no wedding loaded yet ─────────────────────────────────────
   if (!wedding) {
     return (
-      <div className="container page-content" style={{ paddingTop: 20 }}>
+      <div className="container page-content page-narrow" style={{ paddingTop: 20 }}>
         <div className="surface-card empty-state" style={{ padding: 'var(--space-10) var(--space-5)', marginTop: 60 }}>
           <div className="emoji">⏳</div>
           <h3>{t('add.errNoWedding')}</h3>
@@ -238,14 +238,14 @@ export default function AddExpense() {
   }
 
   return (
-    <div className="container page-content" style={{ paddingTop: 20 }}>
+    <div className="container page-content page-narrow" style={{ paddingTop: 20 }}>
       {/* ── Header row ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 4 }}>
         <div className="page-header" style={{ flex: 1, minWidth: 0 }}>
           <button className="back-btn" onClick={goBack} aria-label={t('add.backLabel')}>←</button>
           <h1>{t('add.header')}</h1>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div className="hide-desktop" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <LanguageToggle />
           <ThemeToggle />
         </div>

@@ -1,16 +1,25 @@
+import { useLang } from '@/context/LanguageContext';
+
 interface LoaderProps {
-  /** Optional caption shown under the ring (e.g. "Loading expenses…"). */
+  /** Visible caption under the spinner (e.g. "Loading expenses…"). */
   label?: string;
+  /** `md` fills a page/section area; `sm` is compact for cards and inline slots. */
+  size?: 'md' | 'sm';
 }
 
 /**
- * Premium gradient-ring loader. Pure CSS (zero motion-lib deps), brand-themed,
- * and reduced-motion aware. Used in place of skeleton blocks on list views.
+ * The app's single loading indicator: eight brand dots pulsing round a ring.
+ * Pure CSS (index.css → "App loader"), compositor-only animation, fades in
+ * after a short delay so fast loads never flash, motion-free under
+ * prefers-reduced-motion.
  */
-export default function Loader({ label }: LoaderProps) {
+export default function Loader({ label, size = 'md' }: LoaderProps) {
+  const { t } = useLang();
   return (
-    <div className="app-loader" role="status" aria-live="polite" aria-label={label || 'Loading'}>
-      <div className="app-loader-ring" aria-hidden="true" />
+    <div className={`app-loader${size === 'sm' ? ' app-loader-sm' : ''}`} role="status" aria-live="polite" aria-label={label || t('common.loading')}>
+      <div className="app-loader-dots" aria-hidden="true">
+        <span /><span /><span /><span /><span /><span /><span /><span />
+      </div>
       {label && <span className="app-loader-label">{label}</span>}
     </div>
   );

@@ -6,6 +6,7 @@ import { useLang } from '@/context/LanguageContext';
 import { createWedding, createPersonalWorkspace, lookupJoin, joinWedding, resetPinWithCode, loginUser, googleLogin, selectWedding, forgotPassword } from '@/api';
 import PinField from '@/components/PinField';
 import BrandLogo from '@/components/BrandLogo';
+import Loader from '@/components/Loader';
 import { pinErrorMessage, pinFormError } from '@/utils/pinErrors';
 import ThemeToggle from '@/components/ThemeToggle';
 import LanguageToggle from '@/components/LanguageToggle';
@@ -128,11 +129,7 @@ function GoogleAuthButton({ onCredential, text = 'continue_with' }: { onCredenti
   return (
     <div>
       <div ref={containerRef} style={{ display: 'flex', justifyContent: 'center', minHeight: 44 }} />
-      {status === 'loading' && (
-        <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: 8 }}>
-          {t('login.googleLoading')}
-        </p>
-      )}
+      {status === 'loading' && <Loader size="sm" label={t('login.googleLoading')} />}
       {status === 'unavailable' && (
         <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: 8 }}>
           {t('login.googleConfigHint')}

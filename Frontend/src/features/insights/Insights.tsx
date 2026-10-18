@@ -173,17 +173,13 @@ export default function Insights() {
 
   const hasData = totalCount > 0;
 
-  // Loading state — show the page chrome but a centered loader where the
-  // content would be. Skeleton would be heavier than the existing Loader
-  // component, which is the established pattern for fetch-driven pages.
+  // Loading state — page chrome stays, the shared Loader fills the content area.
   if (loading && !data) {
     return (
       <div className="container page-content animate-in" style={{ paddingTop: 20 }}>
         <InsightsHeader />
         <TimeRangePicker value={preset} onChange={setPreset} />
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-12) 0' }}>
-          <Loader />
-        </div>
+        <Loader label={t('common.loading')} />
       </div>
     );
   }
@@ -314,7 +310,7 @@ function InsightsHeader() {
       <h1 className="h1" style={{ fontSize: '1.55rem', wordBreak: 'break-word' }}>
         {t('insights.header')}
       </h1>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+      <div className="hide-desktop" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <LanguageToggle />
         <ThemeToggle />
       </div>

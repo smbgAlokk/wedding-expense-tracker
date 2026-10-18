@@ -4,10 +4,10 @@ import toast from 'react-hot-toast';
 import { useWedding } from '@/context/WeddingContext';
 import { useLang } from '@/context/LanguageContext';
 import { fmtDate } from '@/utils/format';
-import { avatarColor } from '@/utils/avatarColor';
 import { removeMember, adminResetMemberPin, decideJoinRequest } from '@/api';
 import type { Member } from '@/types';
 import RollText from '@/components/RollText';
+import Avatar from '@/components/Avatar';
 
 
 // Join-code members (no email) sign in with a PIN the admin can reset.
@@ -78,7 +78,7 @@ export default function Members() {
   return (
     <div className="container page-content animate-in" style={{ paddingTop: 20 }}>
       <div className="page-header">
-        <button className="back-btn" onClick={() => navigate('/settings')} aria-label="Back">←</button>
+        <button className="back-btn hide-desktop" onClick={() => navigate('/settings')} aria-label="Back">←</button>
         <h1>{t('members.header')}</h1>
       </div>
 
@@ -104,9 +104,7 @@ export default function Members() {
           {pendingMembers.map(m => (
             <div key={m._id} className="surface-card" style={{ marginBottom: 10, padding: 'var(--space-4)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                <div className="avatar" style={{ background: avatarColor(m.name), width: 40, height: 40, fontSize: '1rem' }}>
-                  {(m.name || 'U')[0].toUpperCase()}
-                </div>
+                <Avatar name={m.name} src={m.avatar} size={40} />
                 <div style={{ minWidth: 0 }}>
                   <p style={{ fontWeight: 600, wordBreak: 'break-word' }}>{m.name}</p>
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
@@ -131,12 +129,10 @@ export default function Members() {
         {members.length === 1 ? t('members.joinedCountOne') : t('members.joinedCount', { count: members.length })}
       </p>
 
-      <div className="stagger">
+      <div className="member-grid stagger">
         {members.map(m => (
           <div key={m._id} className="expense-item">
-            <div className="avatar" style={{ background: avatarColor(m.name), width: 42, height: 42, fontSize: '1rem' }}>
-              {(m.name || 'U')[0].toUpperCase()}
-            </div>
+            <Avatar name={m.name} src={m.avatar} size={42} />
             <div className="expense-info">
               <h4 style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 {m.name}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useWedding } from '@/context/WeddingContext';
@@ -12,6 +12,9 @@ import LanguageToggle from '@/components/LanguageToggle';
 import ThemeToggle from '@/components/ThemeToggle';
 import CoachConsentModal from '@/features/coach/CoachConsentModal';
 import AccountCard from './AccountCard';
+import ProfileCard from './ProfileCard';
+import AccountSwitcher from './AccountSwitcher';
+import SignOutDialog from '@/features/auth/SignOutDialog';
 import LockSwitch from '@/components/LockSwitch';
 import type { Category, BudgetBucket } from '@/types';
 import { BUDGET_BUCKETS, DEFAULT_BUDGET_ALLOCATION } from '@/types';
@@ -19,7 +22,7 @@ import RollText from '@/components/RollText';
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { wedding, member, isAdmin, features, workspaceType, logout, refreshWedding } = useWedding();
+  const { wedding, isAdmin, features, workspaceType, refreshWedding } = useWedding();
   const { t, tCat, tServer, lang } = useLang();
   const [editing, setEditing] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
@@ -243,421 +246,401 @@ export default function Settings() {
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-    toast.success(t('settings.signedOut'));
-  };
-
-  // Tell the user exactly how they'll get back in — and warn if they can't yet.
-  const signOutBodyKey = member?.email
-    ? (features.multiMember ? 'settings.signOutBodyEmail' : 'settings.signOutBody')
-    : (member?.pinSetAt ? 'settings.signOutBodyPin' : 'settings.signOutBodyNoPin');
+  const closeLeaveModal = useCallback(() => setShowLeaveModal(false), []);
 
   return (
     <div className="container page-content animate-in" style={{ paddingTop: 20 }}>
       <div className="page-header">
-        <button className="back-btn" onClick={() => navigate('/dashboard')} aria-label="Back">←</button>
+        <button className="back-btn hide-desktop" onClick={() => navigate('/dashboard')} aria-label="Back">←</button>
         <h1>{t('settings.header')}</h1>
       </div>
 
-      {/* Preferences row — language + theme */}
-      <div className="surface-card" style={{ marginBottom: 16, padding: 'var(--space-4) var(--space-5)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <div style={{ minWidth: 0 }}>
-          <p style={{ fontSize: '0.95rem', fontWeight: 600 }}>🌐 {t('settings.languageLabel')}</p>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 2 }}>
-            {lang === 'hi' ? 'हिन्दी' : 'English'}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-          <LanguageToggle />
-          <ThemeToggle />
-        </div>
-      </div>
-
-      <AccountCard />
-
-      {/* Workspace Info — wedding-specific fields (couple names, wedding date)
-          are hidden for single-member verticals (Personal). The budget label
-          shifts from "Total Budget" to "Monthly Budget" for monthly verticals. */}
-      <div className="surface-card" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>
-            {features.multiMember ? t('settings.weddingDetails') : t('settings.budgetDetails')}
-          </h3>
-          {isAdmin && !editing && (
-            <button className="btn btn-secondary btn-xs" onClick={() => setEditing(true)}><RollText>{t('common.edit')}</RollText></button>
-          )}
-        </div>
-
-        {editing ? (
-          <>
-            <div className="form-group">
-              <label className="form-label">
-                {features.multiMember ? t('settings.weddingName') : t('settings.budgetName')}
-              </label>
-              <input className="form-input" value={form.weddingName} onChange={e => set('weddingName', e.target.value)} />
+      <div className="settings-layout">
+        <div>
+          <ProfileCard />
+          {/* Preferences row — language + theme */}
+          <div className="surface-card" style={{ marginBottom: 16, padding: 'var(--space-4) var(--space-5)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ fontSize: '0.95rem', fontWeight: 600 }}>🌐 {t('settings.languageLabel')}</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 2 }}>
+                {lang === 'hi' ? 'हिन्दी' : 'English'}
+              </p>
             </div>
-            {features.multiMember && (
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <LanguageToggle />
+              <ThemeToggle />
+            </div>
+          </div>
+
+          <AccountCard />
+          <AccountSwitcher />
+        </div>
+
+        <div>
+          {/* Workspace Info — wedding-specific fields (couple names, wedding date)
+              are hidden for single-member verticals (Personal). The budget label
+              shifts from "Total Budget" to "Monthly Budget" for monthly verticals. */}
+          <div className="surface-card" style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>
+                {features.multiMember ? t('settings.weddingDetails') : t('settings.budgetDetails')}
+              </h3>
+              {isAdmin && !editing && (
+                <button className="btn btn-secondary btn-xs" onClick={() => setEditing(true)}><RollText>{t('common.edit')}</RollText></button>
+              )}
+            </div>
+
+            {editing ? (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="form-group">
-                    <label className="form-label">{t('settings.partner1')}</label>
-                    <input className="form-input" value={form.partner1} onChange={e => set('partner1', e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">{t('settings.partner2')}</label>
-                    <input className="form-input" value={form.partner2} onChange={e => set('partner2', e.target.value)} />
-                  </div>
-                </div>
                 <div className="form-group">
-                  <label className="form-label">{t('settings.weddingDate')}</label>
-                  <input className="form-input" type="date" value={form.weddingDate} onChange={e => set('weddingDate', e.target.value)} />
+                  <label className="form-label">
+                    {features.multiMember ? t('settings.weddingName') : t('settings.budgetName')}
+                  </label>
+                  <input className="form-input" value={form.weddingName} onChange={e => set('weddingName', e.target.value)} />
                 </div>
-              </>
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
-              <div className="form-group">
-                <label className="form-label">
-                  {features.monthlyBudget ? t('settings.monthlyBudget') : t('settings.totalBudget')}
-                </label>
-                <input className="form-input" type="number" inputMode="decimal" value={form.totalBudget} onChange={e => set('totalBudget', e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">{t('settings.currency')}</label>
-                <select className="form-input" value={form.currency} onChange={e => set('currency', e.target.value)}>
-                  <option value="₹">₹ INR</option>
-                  <option value="$">$ USD</option>
-                  <option value="€">€ EUR</option>
-                  <option value="£">£ GBP</option>
-                </select>
-              </div>
-            </div>
-            {/* Pay-day picker — only meaningful for monthly-budget verticals
-                (Personal). Empty value = no runway tile; 1-31 = enables the
-                "Until next payday" dashboard insight. */}
-            {features.monthlyBudget && (
-              <div className="form-group">
-                <label className="form-label" htmlFor="settings-pay-day">
-                  {t('settings.payDay.label')}
-                </label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-                  <input
-                    id="settings-pay-day"
-                    className="form-input text-tnum"
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    max={31}
-                    step={1}
-                    placeholder={t('settings.payDay.placeholder')}
-                    value={form.payDay}
-                    onChange={e => {
-                      // Strip everything except digits; keep '' as the cleared
-                      // sentinel. Avoids '01' / '1.5' / 'e+1' edge cases the
-                      // bare number input lets through.
-                      const cleaned = e.target.value.replace(/\D/g, '').slice(0, 2);
-                      set('payDay', cleaned);
-                    }}
-                    style={{ flex: 1 }}
-                  />
-                  {form.payDay && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => set('payDay', '')}
-                      aria-label={t('settings.payDay.clear')}
-                    >
-                      <RollText>{t('settings.payDay.clear')}</RollText>
-                    </button>
-                  )}
-                </div>
-                <p className="text-muted" style={{ fontSize: '0.78rem', marginTop: 6, lineHeight: 1.45 }}>
-                  {t('settings.payDay.help')}
-                </p>
-              </div>
-            )}
-            {/* L0 — Budget Allocation editor (Personal only). Three integer
-                inputs that must sum to exactly 100. Live sum indicator
-                turns red when off-target so users self-correct before save. */}
-            {features.monthlyBudget && (
-              <div className="form-group">
-                <label className="form-label">{t('settings.alloc.label')}</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  {(['need', 'want', 'saving'] as const).map((b) => (
-                    <div key={b}>
-                      <label
-                        htmlFor={`alloc-${b}`}
-                        className="text-muted"
-                        style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}
-                      >
-                        {t(`settings.alloc.${b}`)}
-                      </label>
-                      <div style={{ position: 'relative' }}>
-                        <input
-                          id={`alloc-${b}`}
-                          className={`form-input text-tnum bucket-input bucket-input-${b}`}
-                          type="number"
-                          inputMode="numeric"
-                          min={0}
-                          max={100}
-                          step={1}
-                          value={allocForm[b]}
-                          onChange={(e) => {
-                            const cleaned = e.target.value.replace(/\D/g, '').slice(0, 3);
-                            setAllocForm((p) => ({ ...p, [b]: cleaned }));
-                          }}
-                          style={{ paddingRight: 26 }}
-                          aria-label={t(`settings.alloc.${b}`)}
-                        />
-                        <span
-                          aria-hidden="true"
-                          style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.8rem', pointerEvents: 'none' }}
-                        >%</span>
+                {features.multiMember && (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div className="form-group">
+                        <label className="form-label">{t('settings.partner1')}</label>
+                        <input className="form-input" value={form.partner1} onChange={e => set('partner1', e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">{t('settings.partner2')}</label>
+                        <input className="form-input" value={form.partner2} onChange={e => set('partner2', e.target.value)} />
                       </div>
                     </div>
-                  ))}
+                    <div className="form-group">
+                      <label className="form-label">{t('settings.weddingDate')}</label>
+                      <input className="form-input" type="date" value={form.weddingDate} onChange={e => set('weddingDate', e.target.value)} />
+                    </div>
+                  </>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">
+                      {features.monthlyBudget ? t('settings.monthlyBudget') : t('settings.totalBudget')}
+                    </label>
+                    <input className="form-input" type="number" inputMode="decimal" value={form.totalBudget} onChange={e => set('totalBudget', e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">{t('settings.currency')}</label>
+                    <select className="form-input" value={form.currency} onChange={e => set('currency', e.target.value)}>
+                      <option value="₹">₹ INR</option>
+                      <option value="$">$ USD</option>
+                      <option value="€">€ EUR</option>
+                      <option value="£">£ GBP</option>
+                    </select>
+                  </div>
                 </div>
-                <p
-                  className="text-tnum"
-                  style={{
-                    fontSize: '0.78rem',
-                    marginTop: 8,
-                    fontWeight: 700,
-                    color: allocSum === 100 ? 'var(--success)' : 'var(--danger)',
-                  }}
-                  aria-live="polite"
-                >
-                  {allocSum === 100
-                    ? t('settings.alloc.sumOk')
-                    : t('settings.alloc.sumBad', { sum: allocSum })}
+                {/* Pay-day picker — only meaningful for monthly-budget verticals
+                    (Personal). Empty value = no runway tile; 1-31 = enables the
+                    "Until next payday" dashboard insight. */}
+                {features.monthlyBudget && (
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="settings-pay-day">
+                      {t('settings.payDay.label')}
+                    </label>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                      <input
+                        id="settings-pay-day"
+                        className="form-input text-tnum"
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        max={31}
+                        step={1}
+                        placeholder={t('settings.payDay.placeholder')}
+                        value={form.payDay}
+                        onChange={e => {
+                          // Strip everything except digits; keep '' as the cleared
+                          // sentinel. Avoids '01' / '1.5' / 'e+1' edge cases the
+                          // bare number input lets through.
+                          const cleaned = e.target.value.replace(/\D/g, '').slice(0, 2);
+                          set('payDay', cleaned);
+                        }}
+                        style={{ flex: 1 }}
+                      />
+                      {form.payDay && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => set('payDay', '')}
+                          aria-label={t('settings.payDay.clear')}
+                        >
+                          <RollText>{t('settings.payDay.clear')}</RollText>
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-muted" style={{ fontSize: '0.78rem', marginTop: 6, lineHeight: 1.45 }}>
+                      {t('settings.payDay.help')}
+                    </p>
+                  </div>
+                )}
+                {/* L0 — Budget Allocation editor (Personal only). Three integer
+                    inputs that must sum to exactly 100. Live sum indicator
+                    turns red when off-target so users self-correct before save. */}
+                {features.monthlyBudget && (
+                  <div className="form-group">
+                    <label className="form-label">{t('settings.alloc.label')}</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                      {(['need', 'want', 'saving'] as const).map((b) => (
+                        <div key={b}>
+                          <label
+                            htmlFor={`alloc-${b}`}
+                            className="text-muted"
+                            style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}
+                          >
+                            {t(`settings.alloc.${b}`)}
+                          </label>
+                          <div style={{ position: 'relative' }}>
+                            <input
+                              id={`alloc-${b}`}
+                              className={`form-input text-tnum bucket-input bucket-input-${b}`}
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={allocForm[b]}
+                              onChange={(e) => {
+                                const cleaned = e.target.value.replace(/\D/g, '').slice(0, 3);
+                                setAllocForm((p) => ({ ...p, [b]: cleaned }));
+                              }}
+                              style={{ paddingRight: 26 }}
+                              aria-label={t(`settings.alloc.${b}`)}
+                            />
+                            <span
+                              aria-hidden="true"
+                              style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.8rem', pointerEvents: 'none' }}
+                            >%</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <p
+                      className="text-tnum"
+                      style={{
+                        fontSize: '0.78rem',
+                        marginTop: 8,
+                        fontWeight: 700,
+                        color: allocSum === 100 ? 'var(--success)' : 'var(--danger)',
+                      }}
+                      aria-live="polite"
+                    >
+                      {allocSum === 100
+                        ? t('settings.alloc.sumOk')
+                        : t('settings.alloc.sumBad', { sum: allocSum })}
+                    </p>
+                    <p className="text-muted" style={{ fontSize: '0.78rem', marginTop: 4, lineHeight: 1.45 }}>
+                      {t('settings.alloc.help')}
+                    </p>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                  <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving} style={{ flex: 1 }}>
+                    <RollText>{saving ? t('settings.saving') : t('settings.saveBtn')}</RollText>
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setEditing(false)}><RollText>{t('common.cancel')}</RollText></button>
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: '0.92rem', lineHeight: 1.9, color: 'var(--text-secondary)' }}>
+                <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>{wedding?.weddingName}</p>
+                {features.multiMember && (
+                  <>
+                    <p>{t('settings.coupleLabel', { p1: wedding?.coupleNames?.partner1 || '', p2: wedding?.coupleNames?.partner2 || '' })}</p>
+                    <p>{t('settings.dateLabel', { date: wedding?.weddingDate ? fmtDate(wedding.weddingDate, lang, { day: 'numeric', month: 'long', year: 'numeric' }) : t('common.notSet') })}</p>
+                  </>
+                )}
+                <p className="text-tnum">
+                  {features.monthlyBudget
+                    ? t('settings.monthlyBudgetLabel', { currency: wedding?.currency || '₹', amount: (wedding?.totalBudget || 0).toLocaleString('en-IN') })
+                    : t('settings.budgetLabel', { currency: wedding?.currency || '₹', amount: (wedding?.totalBudget || 0).toLocaleString('en-IN') })}
                 </p>
-                <p className="text-muted" style={{ fontSize: '0.78rem', marginTop: 4, lineHeight: 1.45 }}>
-                  {t('settings.alloc.help')}
-                </p>
+                {features.monthlyBudget && (
+                  <p className="text-tnum">
+                    {wedding?.payDay != null
+                      ? t('settings.payDay.viewLabel', { day: wedding.payDay })
+                      : t('settings.payDay.viewLabelUnset')}
+                  </p>
+                )}
+                {features.monthlyBudget && (
+                  <p className="text-tnum">
+                    {t('settings.alloc.viewLabel', {
+                      need:   wedding?.budgetAllocation?.need   ?? DEFAULT_BUDGET_ALLOCATION.need,
+                      want:   wedding?.budgetAllocation?.want   ?? DEFAULT_BUDGET_ALLOCATION.want,
+                      saving: wedding?.budgetAllocation?.saving ?? DEFAULT_BUDGET_ALLOCATION.saving,
+                    })}
+                  </p>
+                )}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-              <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving} style={{ flex: 1 }}>
-                <RollText>{saving ? t('settings.saving') : t('settings.saveBtn')}</RollText>
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => setEditing(false)}><RollText>{t('common.cancel')}</RollText></button>
-            </div>
-          </>
-        ) : (
-          <div style={{ fontSize: '0.92rem', lineHeight: 1.9, color: 'var(--text-secondary)' }}>
-            <p style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>{wedding?.weddingName}</p>
-            {features.multiMember && (
-              <>
-                <p>{t('settings.coupleLabel', { p1: wedding?.coupleNames?.partner1 || '', p2: wedding?.coupleNames?.partner2 || '' })}</p>
-                <p>{t('settings.dateLabel', { date: wedding?.weddingDate ? fmtDate(wedding.weddingDate, lang, { day: 'numeric', month: 'long', year: 'numeric' }) : t('common.notSet') })}</p>
-              </>
-            )}
-            <p className="text-tnum">
-              {features.monthlyBudget
-                ? t('settings.monthlyBudgetLabel', { currency: wedding?.currency || '₹', amount: (wedding?.totalBudget || 0).toLocaleString('en-IN') })
-                : t('settings.budgetLabel', { currency: wedding?.currency || '₹', amount: (wedding?.totalBudget || 0).toLocaleString('en-IN') })}
-            </p>
-            {features.monthlyBudget && (
-              <p className="text-tnum">
-                {wedding?.payDay != null
-                  ? t('settings.payDay.viewLabel', { day: wedding.payDay })
-                  : t('settings.payDay.viewLabelUnset')}
-              </p>
-            )}
-            {features.monthlyBudget && (
-              <p className="text-tnum">
-                {t('settings.alloc.viewLabel', {
-                  need:   wedding?.budgetAllocation?.need   ?? DEFAULT_BUDGET_ALLOCATION.need,
-                  want:   wedding?.budgetAllocation?.want   ?? DEFAULT_BUDGET_ALLOCATION.want,
-                  saving: wedding?.budgetAllocation?.saving ?? DEFAULT_BUDGET_ALLOCATION.saving,
-                })}
-              </p>
-            )}
           </div>
-        )}
-      </div>
 
-      {/* L3 — AI Coach toggle (Personal-only, monthly-budget verticals). The
-          card is always shown when monthlyBudget is enabled and AI Coach is
-          configured server-side; when unconfigured, it surfaces a gentle
-          "AI Coach is currently unavailable" placeholder rather than hiding
-          completely so users know the feature exists. */}
-      {features.monthlyBudget && aiStatus && (
-        <div className="surface-card ai-settings-card" style={{ marginBottom: 16 }}>
-          <div className="ai-settings-head">
-            <div className="ai-settings-head-text">
-              <h3>{t('settings.ai.title')}</h3>
-              <p className="text-muted" style={{ fontSize: '0.82rem', lineHeight: 1.5 }}>
-                {aiStatus.configured
-                  ? aiStatus.enabled
-                    ? t('settings.ai.descOn')
-                    : t('settings.ai.descOff')
-                  : t('settings.ai.descUnavailable')}
-              </p>
-            </div>
-            {aiStatus.configured && (
-              <button
-                type="button"
-                className={`ai-toggle ${aiStatus.enabled ? 'is-on' : ''}`}
-                onClick={handleToggleAI}
-                disabled={aiBusy}
-                role="switch"
-                aria-checked={aiStatus.enabled}
-                aria-label={t(aiStatus.enabled ? 'settings.ai.ariaOn' : 'settings.ai.ariaOff')}
-              >
-                <span className="ai-toggle-knob" />
-              </button>
-            )}
-          </div>
-          {aiStatus.configured && aiStatus.enabled && aiStatus.quota && (
-            <div className="ai-settings-quota">
-              <span className="text-tnum">
-                {t('settings.ai.quotaDaily', {
-                  used: aiStatus.quota.daily.used,
-                  limit: aiStatus.quota.daily.limit,
-                })}
-              </span>
-              <span className="text-tnum">
-                {t('settings.ai.quotaMonthly', {
-                  used: aiStatus.quota.monthly.used,
-                  limit: aiStatus.quota.monthly.limit,
-                })}
-              </span>
+          {/* L3 — AI Coach toggle (Personal-only, monthly-budget verticals). The
+              card is always shown when monthlyBudget is enabled and AI Coach is
+              configured server-side; when unconfigured, it surfaces a gentle
+              "AI Coach is currently unavailable" placeholder rather than hiding
+              completely so users know the feature exists. */}
+          {features.monthlyBudget && aiStatus && (
+            <div className="surface-card ai-settings-card" style={{ marginBottom: 16 }}>
+              <div className="ai-settings-head">
+                <div className="ai-settings-head-text">
+                  <h3>{t('settings.ai.title')}</h3>
+                  <p className="text-muted" style={{ fontSize: '0.82rem', lineHeight: 1.5 }}>
+                    {aiStatus.configured
+                      ? aiStatus.enabled
+                        ? t('settings.ai.descOn')
+                        : t('settings.ai.descOff')
+                      : t('settings.ai.descUnavailable')}
+                  </p>
+                </div>
+                {aiStatus.configured && (
+                  <button
+                    type="button"
+                    className={`ai-toggle ${aiStatus.enabled ? 'is-on' : ''}`}
+                    onClick={handleToggleAI}
+                    disabled={aiBusy}
+                    role="switch"
+                    aria-checked={aiStatus.enabled}
+                    aria-label={t(aiStatus.enabled ? 'settings.ai.ariaOn' : 'settings.ai.ariaOff')}
+                  >
+                    <span className="ai-toggle-knob" />
+                  </button>
+                )}
+              </div>
+              {aiStatus.configured && aiStatus.enabled && aiStatus.quota && (
+                <div className="ai-settings-quota">
+                  <span className="text-tnum">
+                    {t('settings.ai.quotaDaily', {
+                      used: aiStatus.quota.daily.used,
+                      limit: aiStatus.quota.daily.limit,
+                    })}
+                  </span>
+                  <span className="text-tnum">
+                    {t('settings.ai.quotaMonthly', {
+                      used: aiStatus.quota.monthly.used,
+                      limit: aiStatus.quota.monthly.limit,
+                    })}
+                  </span>
+                </div>
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      {/* L3 — Consent modal portal-rendered. State-only when consentOpen=true. */}
-      <CoachConsentModal
-        open={consentOpen}
-        onCancel={() => setConsentOpen(false)}
-        onAccept={handleAcceptConsent}
-        busy={aiBusy}
-      />
+          {/* L3 — Consent modal portal-rendered. State-only when consentOpen=true. */}
+          <CoachConsentModal
+            open={consentOpen}
+            onCancel={() => setConsentOpen(false)}
+            onAccept={handleAcceptConsent}
+            busy={aiBusy}
+          />
 
-      {/* Categories */}
-      {isAdmin && (
-        <div className="surface-card" style={{ marginBottom: 16 }}>
-          <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 16 }}>{t('settings.categoriesHeader')}</h3>
+          {/* Categories */}
+          {isAdmin && (
+            <div className="surface-card" style={{ marginBottom: 16 }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: 16 }}>{t('settings.categoriesHeader')}</h3>
 
-          {missingDefaults.length > 0 && (
-            <button
-              type="button"
-              onClick={addMissingDefaults}
-              className="btn btn-secondary btn-sm btn-full"
-              style={{
-                marginBottom: 14,
-                background: 'var(--primary-100)',
-                borderColor: 'var(--primary-200)',
-                color: 'var(--primary)',
-                fontWeight: 600,
-              }}
-            >
-              <RollText>{t('settings.suggestedCategories', { count: missingDefaults.length })}</RollText>
+              {missingDefaults.length > 0 && (
+                <button
+                  type="button"
+                  onClick={addMissingDefaults}
+                  className="btn btn-secondary btn-sm btn-full"
+                  style={{
+                    marginBottom: 14,
+                    background: 'var(--primary-100)',
+                    borderColor: 'var(--primary-200)',
+                    color: 'var(--primary)',
+                    fontWeight: 600,
+                  }}
+                >
+                  <RollText>{t('settings.suggestedCategories', { count: missingDefaults.length })}</RollText>
+                </button>
+              )}
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                {categories.map(cat => {
+                  // L0 — Personal-only bucket badge. Tappable to cycle the bucket
+                  // assignment in-place (Need → Want → Saving). For Wedding/Trip
+                  // we render the pill as before; the bucket field is irrelevant.
+                  const bucket: BudgetBucket | null = features.monthlyBudget ? resolveBucket(cat) : null;
+                  return (
+                    <div key={cat.name} className="pill" style={{ paddingRight: 8 }}>
+                      <span>{cat.icon}</span>
+                      <span>{tCat(cat.name)}</span>
+                      {bucket && (
+                        <button
+                          type="button"
+                          onClick={() => cycleCategoryBucket(cat.name)}
+                          className={`bucket-badge bucket-badge-${bucket}`}
+                          aria-label={t('settings.bucket.cycleAria', { name: tCat(cat.name), bucket: t(`settings.alloc.${bucket}`) })}
+                          title={t('settings.bucket.cycleTitle')}
+                        >
+                          {t(`settings.bucket.short.${bucket}`)}
+                        </button>
+                      )}
+                      <button onClick={() => removeCategory(cat.name)} aria-label="Remove" style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '0.85rem', padding: '0 0 0 2px', marginLeft: 2, lineHeight: 1 }}>✕</button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input className="form-input" placeholder={t('settings.newCategoryPlaceholder')} value={newCat.name} onChange={e => setNewCat(p => ({ ...p, name: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCategory(); } }} style={{ flex: 1, minHeight: 44, fontSize: '0.9rem' }} />
+                <button className="btn btn-primary btn-sm" onClick={addCategory}><RollText>{t('settings.addCategory')}</RollText></button>
+              </div>
+              {/* Categories auto-save on add / remove — no separate Save button needed. */}
+            </div>
+          )}
+
+          {/* Join Code — only shown for verticals that have one (Wedding, Trip).
+              Personal workspaces never surface a join code. */}
+          {features.joinCode && wedding?.joinCode && (
+            <div className="hero-card sparkle" style={{ textAlign: 'center', marginBottom: 16 }}>
+              <p className="section-title" style={{ marginBottom: 8 }}>{t('settings.joinCode')}</p>
+              <div className="text-tnum" style={{ fontSize: '1.85rem', fontWeight: 800, letterSpacing: '7px', color: 'var(--primary-light)', marginBottom: 12 }}>
+                {wedding.joinCode}
+              </div>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => { navigator.clipboard.writeText(wedding.joinCode); toast.success(t('common.copied')); }}
+              >
+                <RollText>{t('settings.copy')}</RollText>
+              </button>
+              {isAdmin && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-color)', textAlign: 'left' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>🛡️ {t('settings.approvalLabel')}</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 2, lineHeight: 1.4 }}>
+                      {t(approvalOn ? 'settings.approvalHintOn' : 'settings.approvalHintOff')}
+                    </p>
+                  </div>
+                  <LockSwitch
+                    checked={approvalOn}
+                    onChange={() => toggleJoinApproval()}
+                    disabled={approvalBusy}
+                    label={t('settings.approvalLabel')}
+                    id="toggle-join-approval"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Members shortcut — single-member verticals hide this (no one else exists). */}
+          {features.multiMember && (
+            <button className="btn btn-secondary btn-full" onClick={() => navigate('/members')} style={{ marginBottom: 12 }}>
+              <RollText>{t('settings.viewMembers')}</RollText>
             </button>
           )}
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-            {categories.map(cat => {
-              // L0 — Personal-only bucket badge. Tappable to cycle the bucket
-              // assignment in-place (Need → Want → Saving). For Wedding/Trip
-              // we render the pill as before; the bucket field is irrelevant.
-              const bucket: BudgetBucket | null = features.monthlyBudget ? resolveBucket(cat) : null;
-              return (
-                <div key={cat.name} className="pill" style={{ paddingRight: 8 }}>
-                  <span>{cat.icon}</span>
-                  <span>{tCat(cat.name)}</span>
-                  {bucket && (
-                    <button
-                      type="button"
-                      onClick={() => cycleCategoryBucket(cat.name)}
-                      className={`bucket-badge bucket-badge-${bucket}`}
-                      aria-label={t('settings.bucket.cycleAria', { name: tCat(cat.name), bucket: t(`settings.alloc.${bucket}`) })}
-                      title={t('settings.bucket.cycleTitle')}
-                    >
-                      {t(`settings.bucket.short.${bucket}`)}
-                    </button>
-                  )}
-                  <button onClick={() => removeCategory(cat.name)} aria-label="Remove" style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '0.85rem', padding: '0 0 0 2px', marginLeft: 2, lineHeight: 1 }}>✕</button>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input className="form-input" placeholder={t('settings.newCategoryPlaceholder')} value={newCat.name} onChange={e => setNewCat(p => ({ ...p, name: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCategory(); } }} style={{ flex: 1, minHeight: 44, fontSize: '0.9rem' }} />
-            <button className="btn btn-primary btn-sm" onClick={addCategory}><RollText>{t('settings.addCategory')}</RollText></button>
-          </div>
-          {/* Categories auto-save on add / remove — no separate Save button needed. */}
-        </div>
-      )}
-
-      {/* Join Code — only shown for verticals that have one (Wedding, Trip).
-          Personal workspaces never surface a join code. */}
-      {features.joinCode && wedding?.joinCode && (
-        <div className="hero-card sparkle" style={{ textAlign: 'center', marginBottom: 16 }}>
-          <p className="section-title" style={{ marginBottom: 8 }}>{t('settings.joinCode')}</p>
-          <div className="text-tnum" style={{ fontSize: '1.85rem', fontWeight: 800, letterSpacing: '7px', color: 'var(--primary-light)', marginBottom: 12 }}>
-            {wedding.joinCode}
-          </div>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => { navigator.clipboard.writeText(wedding.joinCode); toast.success(t('common.copied')); }}
-          >
-            <RollText>{t('settings.copy')}</RollText>
+          <button className="btn btn-danger btn-full" onClick={() => setShowLeaveModal(true)} id="btn-logout" style={{ marginBottom: 40 }}>
+            <RollText>{t('settings.signOut')}</RollText>
           </button>
-          {isAdmin && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-color)', textAlign: 'left' }}>
-              <div style={{ minWidth: 0 }}>
-                <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>🛡️ {t('settings.approvalLabel')}</p>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: 2, lineHeight: 1.4 }}>
-                  {t(approvalOn ? 'settings.approvalHintOn' : 'settings.approvalHintOff')}
-                </p>
-              </div>
-              <LockSwitch
-                checked={approvalOn}
-                onChange={() => toggleJoinApproval()}
-                disabled={approvalBusy}
-                label={t('settings.approvalLabel')}
-                id="toggle-join-approval"
-              />
-            </div>
-          )}
         </div>
-      )}
+      </div>
 
-      {/* Members shortcut — single-member verticals hide this (no one else exists). */}
-      {features.multiMember && (
-        <button className="btn btn-secondary btn-full" onClick={() => navigate('/members')} style={{ marginBottom: 12 }}>
-          <RollText>{t('settings.viewMembers')}</RollText>
-        </button>
-      )}
-
-      <button className="btn btn-danger btn-full" onClick={() => setShowLeaveModal(true)} id="btn-logout" style={{ marginBottom: 40 }}>
-        <RollText>{t('settings.signOut')}</RollText>
-      </button>
-
-      {/* Leave Confirmation Modal */}
-      {showLeaveModal && (
-        <div className="modal-backdrop" onClick={() => setShowLeaveModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: '3rem', marginBottom: 12 }}>👋</div>
-            <h2 className="h2" style={{ marginBottom: 8 }}>{t('settings.signOutTitle')}</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem', marginBottom: 24, lineHeight: 1.55 }}>
-              {t(signOutBodyKey, { wedding: wedding?.weddingName || '' })}
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button className="btn btn-danger btn-full btn-lg" onClick={handleLogout} id="btn-confirm-leave">
-                <RollText>{t('settings.signOutYes')}</RollText>
-              </button>
-              <button className="btn btn-ghost btn-full" onClick={() => setShowLeaveModal(false)} id="btn-cancel-leave">
-                <RollText>{t('common.cancel')}</RollText>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {showLeaveModal && <SignOutDialog onClose={closeLeaveModal} />}
     </div>
   );
 }

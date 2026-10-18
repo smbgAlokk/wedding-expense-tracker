@@ -21,26 +21,25 @@ const isConfigured = () => {
   );
 };
 
+// Auto-optimise: Cloudinary picks the best format and ~80% quality — drastically
+// reduces storage + bandwidth. Default suits receipts (readable, max 1200px).
+const RECEIPT_TRANSFORM = [{ quality: 'auto', fetch_format: 'auto', width: 1200, crop: 'limit' }];
+
 /**
  * Upload an image buffer to Cloudinary.
  *
- * @param {Buffer}  buffer    - Raw file buffer from multer memoryStorage
- * @param {string}  folder    - Cloudinary folder path (e.g. `wedding-receipts/<weddingId>`)
- * @param {string} [publicId] - Optional custom public_id; Cloudinary auto-generates if omitted
+ * @param {Buffer}  buffer                  - Raw file buffer from multer memoryStorage
+ * @param {object}  [opts]
+ * @param {string}  [opts.folder]           - Folder for auto-named assets (e.g. `wedding-receipts/<weddingId>`)
+ * @param {string}  [opts.publicId]         - Fixed full public_id; re-uploads overwrite it and purge the CDN copy
+ * @param {object[]} [opts.transformation]  - Incoming transformation (defaults to the receipt one)
  * @returns {Promise<{ url: string, publicId: string }>}
  */
-const uploadToCloudinary = (buffer, folder, publicId) => {
+const uploadToCloudinary = (buffer, { folder, publicId, transformation = RECEIPT_TRANSFORM } = {}) => {
   return new Promise((resolve, reject) => {
-    const opts = {
-      folder,
-      resource_type: 'image',
-      // Auto-optimise: Cloudinary picks best format (WebP on supported browsers)
-      // and compresses to ~80% quality — drastically reduces storage + bandwidth.
-      transformation: [
-        { quality: 'auto', fetch_format: 'auto', width: 1200, crop: 'limit' },
-      ],
-    };
-    if (publicId) opts.public_id = publicId;
+    const opts = { resource_type: 'image', transformation };
+    if (publicId) Object.assign(opts, { public_id: publicId, overwrite: true, invalidate: true });
+    else opts.folder = folder;
 
     const stream = cloudinary.uploader.upload_stream(opts, (err, result) => {
       if (err) return reject(err);

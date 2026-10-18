@@ -11,7 +11,7 @@ import AllExpenses from '@/features/expenses/AllExpenses';
 import Members from '@/features/members/Members';
 import Settings from '@/features/settings/Settings';
 import Insights from '@/features/insights/Insights';
-import BottomNav from '@/components/BottomNav';
+import AppNav from '@/components/AppNav';
 
 // Standalone email-link pages: reachable signed in or out, no app chrome.
 const STANDALONE_PATHS = new Set(['/verify-email', '/reset-password']);
@@ -28,8 +28,10 @@ export default function App() {
   // Awaiting admin approval: nothing of the workspace is reachable yet.
   if (isPending && !STANDALONE_PATHS.has(pathname)) return <PendingApproval />;
 
+  const withNav = isAuthenticated && !STANDALONE_PATHS.has(pathname);
+
   return (
-    <>
+    <div className={withNav ? 'app-main' : undefined}>
       <Routes>
         <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LandingPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
@@ -43,7 +45,7 @@ export default function App() {
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      {isAuthenticated && !STANDALONE_PATHS.has(pathname) && <BottomNav />}
-    </>
+      {withNav && <AppNav />}
+    </div>
   );
 }

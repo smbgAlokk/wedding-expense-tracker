@@ -13,6 +13,8 @@ export const WORKSPACE_TYPES: readonly WorkspaceType[] = ['wedding', 'trip', 'pe
 
 export const DEFAULT_WORKSPACE_TYPE: WorkspaceType = 'wedding';
 
+export const WORKSPACE_ICON: Record<WorkspaceType, string> = { wedding: '💒', personal: '💰', trip: '✈️' };
+
 /**
  * Feature flag matrix per workspace type. The UI consults these to gate
  * sections instead of scattering `if (type === 'wedding')` across pages.
@@ -79,6 +81,8 @@ export interface Member {
   email?: string;
   role: 'admin' | 'member';
   relation?: string;
+  // Cloudinary URL of the profile photo; '' / absent = show initials.
+  avatar?: string;
   joinedAt?: string;
   createdAt?: string;
   // ISO date once verified, null while pending. Absent only in member caches
@@ -218,6 +222,7 @@ export interface ExpenseSummary {
     count: number;
     name: string;
     relation: string;
+    avatar?: string;
   }>;
   recentExpenses?: Expense[];
   dailyTrend?: Array<{ _id: string; total: number; count: number }>;

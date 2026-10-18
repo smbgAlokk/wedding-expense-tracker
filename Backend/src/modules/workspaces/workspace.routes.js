@@ -30,6 +30,7 @@ const { frontendUrl } = require('../../utils/frontendUrl');
 const { getFeatures } = require('../../constants/workspaceDefaults');
 const { MIN_PASSWORD_LENGTH, PASSWORD_LENGTH_MESSAGE } = require('../../constants/auth');
 const { requiresApproval, pendingLimitReached, readmit, publicWedding, notifyJoinRequest } = require('../../services/membership');
+const { normalizeName, cleanName, nameKey, nameTaken, sendNameError } = require('../../services/memberName');
 
 // Stricter than the global authLimiter (audit H-3, 2026-05-28). Signups are
 // infrequent legitimate actions — disposable signup spam is the primary abuse
@@ -372,7 +373,6 @@ router.post('/personal', signupLimiter, asyncHandler(async (req, res) => {
 // /api/weddings/join rate-limit bucket, plus the per-account PIN lockout.
 
 const isText = (v) => typeof v === 'string' && v.trim() !== '';
-const normalizeName = (s) => s.trim().replace(/\s+/g, ' ');
 
 const JOIN_STATUS_ERRORS = {
   declined: [403, 'REQUEST_DECLINED', 'Your request to join this wedding was declined by the organiser.'],
@@ -472,6 +472,12 @@ router.post('/join', asyncHandler(async (req, res) => {
   const problem = pinProblem(pin);
   if (problem) return sendPinError(res, problem);
 
+  // No exact match, but a look-alike (case / width / hidden joiner) would still
+  // make the family — and the next name lookup — confuse the two accounts.
+  const newName = cleanName(displayName);
+  if (!newName) return sendNameError(res, 'invalid');
+  if (await nameTaken(wedding._id, newName)) return sendNameError(res, 'taken');
+
   const pending = requiresApproval(wedding);
   if (pending && await pendingLimitReached(wedding._id)) {
     return res.status(429).json({
@@ -481,15 +487,22 @@ router.post('/join', asyncHandler(async (req, res) => {
     });
   }
 
-  const created = await Member.create({
-    weddingId: wedding._id,
-    name: displayName,
-    relation: isText(relation) ? relation.trim().slice(0, 50) : 'Family',
-    role: 'member',
-    status: pending ? 'pending' : 'approved',
-    pinHash: await hashPin(pin),
-    pinSetAt: new Date(),
-  });
+  let created;
+  try {
+    created = await Member.create({
+      weddingId: wedding._id,
+      name: newName,
+      nameKey: nameKey(newName),
+      relation: isText(relation) ? relation.trim().slice(0, 50) : 'Family',
+      role: 'member',
+      status: pending ? 'pending' : 'approved',
+      pinHash: await hashPin(pin),
+      pinSetAt: new Date(),
+    });
+  } catch (err) {
+    if (err.code === 11000) return sendNameError(res, 'taken'); // lost a race for the same name
+    throw err;
+  }
   if (pending) notifyJoinRequest(wedding, created);
   return sendJoinSession(req, res, 201, wedding, created, `Welcome, ${created.name}! You've joined ${wedding.weddingName}.`);
 }));
